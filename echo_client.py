@@ -7,6 +7,7 @@ from threading import Thread
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
+from PyQt5.QtWebEngineWidgets import *
 
 HOST = "localhost"  # The server's hostname or IP address
 PORT = 0  # The port used by the server, must be >= 1024
@@ -59,8 +60,13 @@ class MainWindow(QWidget):
 
     def server_connection(self):
         while self.status == "CONNECTED":
-            self.socket.sendall((''.join(self.keys)).encode('utf-8'))
-            print("being sent: " + ''.join(self.keys))
+            try:
+                self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+                print("being sent: " + ''.join(self.keys))
+            except:
+                self.status = "DISCONNECTED"
+                self.update_status()
+                break
 
 
     def connect_to_server(self):
