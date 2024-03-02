@@ -14,11 +14,24 @@ from PyQt5.QtWebEngineWidgets import *
 HOST = "localhost"  # The server's hostname or IP address
 PORT = 0  # The port used by the server, must be >= 1024
 
+
+class WorkerThread(QThread):
+    update_signal = pyqtSignal(str)
+
+    def __init__(self, parent, message):
+        super().__init__(parent)
+        self.message = message
+
+    def run(self):
+        self.update_signal.emit(self.message)
+
+
 class MainWindow(QWidget):
 
     def __init__(self):
         super(MainWindow, self).__init__()
 
+        self.logger = None
         self.status_label = None
         # self.setStyleSheet("background-color: #202124;")    # for dark mode
         self.setWindowTitle("RFES Control Center")
@@ -31,6 +44,7 @@ class MainWindow(QWidget):
         self.c_d_button = QPushButton()
         self.socket = None
 
+        # corresponds to W, A, S, D, spacebar
         self.keys = ['0', '0', '0', '0', '0']
 
         # default values
@@ -39,7 +53,6 @@ class MainWindow(QWidget):
 
         self.info = QLabel()
         self.info.setFont(QFont("sans serif", 12))
-
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -73,20 +86,23 @@ class MainWindow(QWidget):
 
         self.create_label_panel()
         self.create_entry_panel()
-        self.create_connect_disconnect_panel()
         self.show_status()
-
         self.display_web()
+        self.display_logs()
+        self.create_connect_disconnect_panel()
 
     def server_connection(self):
         while self.status == "CONNECTED":
             try:
                 self.socket.sendall((''.join(self.keys)).encode('utf-8'))
-                print("being sent: " + ''.join(self.keys))
+                # worker_thread = WorkerThread(self, )
+                # worker_thread.update_signal.connect(self.log)
+                # worker_thread.start()
             except:
                 self.status = "DISCONNECTED"
                 self.update_status()
                 break
+            # self.log("testt")      # "being sent: " + ''.join(self.keys)
 
 
     def connect_to_server(self):
@@ -109,21 +125,43 @@ class MainWindow(QWidget):
             self.socket.close()
 
     def display_web(self):
-        browser = QWebEngineView()
-        browser.setFixedSize(1500, 1000)
+        # browser = QWebEngineView()
+        # browser.setFixedSize(1500, 840)
+        # browser.setUrl(QUrl("http://google.com"))
+        # self.bot_layout.addWidget(browser)
+        sample_pic = QLabel()
+        sample_pic.setFixedSize(1500, 840)
+        sample_pic.setPixmap(QPixmap("samplefeed.jpg"))
+        self.bot_layout.addWidget(sample_pic)
 
-        browser.setUrl(QUrl("http://google.com"))
-        self.bot_layout.addWidget(browser)
+    def display_logs(self):
+        logs_w = QWidget()
+        logs_l = QVBoxLayout()
+        logs_w.setLayout(logs_l)
 
-    # def show_logs(self):
-    #     log_widget = QWidget()
-    #     log_layout = Q
+        logger_label = QLabel("Logs")
+        logger_label.setFont(QFont("sans serif", 12))
+        logs_l.addWidget(logger_label)
 
+        self.logger = QTextEdit()
+        self.logger.setFixedSize(330, 800)
+        self.logger.setReadOnly(True)
+
+        self.logger.setAlignment(Qt.AlignBottom)
+        self.logger.setText("TEST")
+        self.logger.setContentsMargins(5, 0, 0, 5)
+        logs_l.addWidget(self.logger)
+
+        self.bot_layout.addWidget(logs_w)
+
+    def log(self, message):
+        self.logger.setText(str(self.logger.toPlainText()) + "\n" + "CLIENT: " + message)
 
     def keyPressEvent(self, event):
         if not event.isAutoRepeat():
             if event.text() == 'w':
                 self.keys[0] = '1'
+                self.log("Moving forward.")
             if event.text() == 'a':
                 self.keys[1] = '1'
             if event.text() == 's':
@@ -137,6 +175,7 @@ class MainWindow(QWidget):
         if not event.isAutoRepeat():
             if event.text() == 'w':
                 self.keys[0] = '0'
+                self.log("Stopped moving forward.")
             if event.text() == 'a':
                 self.keys[1] = '0'
             if event.text() == 's':
@@ -171,12 +210,14 @@ class MainWindow(QWidget):
 
         self.ip_entry = QLineEdit()
         self.ip_entry.setFixedSize(200, 25)
+        self.ip_entry.setPlaceholderText(self.defaultIP)
         self.ip_entry.setText(self.defaultIP)
         self.ip_entry.setFont(QFont("sans serif", 12))
         TL_R_layout.addWidget(self.ip_entry)
 
         self.port_entry = QLineEdit()
         self.port_entry.setFixedSize(80, 25)
+        self.port_entry.setPlaceholderText(self.defaultPort)
         self.port_entry.setText(self.defaultPort)
         self.port_entry.setFont(QFont("sans serif", 12))
         TL_R_layout.addWidget(self.port_entry)
@@ -194,7 +235,7 @@ class MainWindow(QWidget):
 
         self.c_d_button.setText("Connect")
         self.c_d_button.setFont(QFont("sans serif", 12))
-        self.c_d_button.setFixedSize(200, 50)
+        self.c_d_button.setFixedSize(200, 40)
         self.c_d_button.clicked.connect(self.connect_to_server)
         button_layout.addWidget(self.c_d_button)
 
