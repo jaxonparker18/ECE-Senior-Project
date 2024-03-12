@@ -3,6 +3,14 @@
 from socket import *
 import sys
 import datetime
+import numpy
+from gpiozero import PWMLED
+from time import sleep
+
+HOST = "localhost"  # Standard loopback interface address (localhost)
+PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
+
+led = PWMLED("BOARD32")
 
 
 def get_most_recent(data_bytes):
@@ -10,8 +18,18 @@ def get_most_recent(data_bytes):
     return string_data[len(string_data) - 5: len(string_data)]
 
 
-HOST = "localhost"  # Standard loopback interface address (localhost)
-PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
+def execute_commands(bits):
+    # print(bits)
+    if len(bits) != 5:
+        return
+
+    if bits[0] == '1':
+        led.value = 1
+        print("on")
+    else:
+        led.value = 0
+        print("off")
+
 
 with socket(AF_INET, SOCK_STREAM) as s:
     s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -26,7 +44,8 @@ with socket(AF_INET, SOCK_STREAM) as s:
                 try:
                     data = conn.recv(1024)
                     if data:
-                        print("data is " + get_most_recent(data))
+                        # print("data is " + get_most_recent(data))
+                        execute_commands(get_most_recent(data))
                     if not data:
                         print("Disconnected from control center")
                         break
