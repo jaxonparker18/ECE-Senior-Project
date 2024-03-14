@@ -14,7 +14,7 @@ import ctypes
 
 
 HOST = "localhost"  # The server's hostname or IP address
-PORT = 0  # The port used by the server, must be >= 1024
+PORT = 2100  # The port used by the server, must be >= 1024
 
 client = 0
 server = 1
@@ -58,8 +58,8 @@ class MainWindow(QWidget):
         self.send_commands = False
 
         # default values
-        self.defaultIP = "localhost"
-        self.defaultPort = "2100"
+        self.defaultIP = str(HOST)
+        self.defaultPort = str(PORT)
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)

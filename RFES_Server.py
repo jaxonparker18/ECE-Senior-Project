@@ -38,8 +38,8 @@ def execute_w(cond):
     if cond == '1':
         print("forward")
         # ramping up speed
-        for v in numpy.arange(0, 1, 0.001):
-            # led.value = v
+        # for v in numpy.arange(0, 1, 0.001):
+        #     # led.value = v
 
         # led.value = 1
 
