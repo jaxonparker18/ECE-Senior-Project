@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import *
 from PyQt5.QtWebEngineWidgets import *
+import ctypes
+
 
 HOST = "localhost"  # The server's hostname or IP address
 PORT = 0  # The port used by the server, must be >= 1024
@@ -42,6 +44,7 @@ class MainWindow(QWidget):
         screen = QDesktopWidget().screenGeometry()
         self.setGeometry(0, 0, screen.width(), screen.height())
         self.showMaximized()
+        self.setWindowIcon(QIcon('res/rfes_icon.png'))
 
         self.ip_entry = QLineEdit()
         self.port_entry = QLineEdit()
@@ -50,8 +53,9 @@ class MainWindow(QWidget):
         self.browser = None
         self.no_feed = None
 
-        # corresponds to W, A, S, D, spacebar
-        self.keys = ['0', '0', '0', '0', '0']
+        # corresponds to [W, A, S, D, spacebar, up, down, left, right]
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.send_commands = False
 
         # default values
         self.defaultIP = "localhost"
@@ -98,7 +102,9 @@ class MainWindow(QWidget):
 
         while self.status == "CONNECTED":
             try:
-                self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+                if self.send_commands:
+                    self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+                    self.send_commands = False
 
             except:
                 self.status = "DISCONNECTED"
@@ -138,7 +144,7 @@ class MainWindow(QWidget):
 
         self.no_feed = QLabel()
         self.no_feed.setFixedSize(1500, 840)
-        self.no_feed.setPixmap(QPixmap("not_connected.png"))
+        self.no_feed.setPixmap(QPixmap("res/not_connected.png"))
         self.no_feed.setAlignment(Qt.AlignCenter)
         self.bot_layout.addWidget(self.no_feed)
 
@@ -174,32 +180,68 @@ class MainWindow(QWidget):
         )
 
     def keyPressEvent(self, event):
+        key = event.key()
         if not event.isAutoRepeat():
-            if event.text() == 'w':
+            if key == Qt.Key_W:
                 self.keys[0] = '1'
                 self.log(client, "Moving forward.")
-            if event.text() == 'a':
+            if key == Qt.Key_A:
                 self.keys[1] = '1'
-            if event.text() == 's':
+                self.log(client, "Moving left.")
+            if key == Qt.Key_S:
                 self.keys[2] = '1'
-            if event.text() == 'd':
+                self.log(client, "Moving back.")
+            if key == Qt.Key_D:
                 self.keys[3] = '1'
-            if event.text() == ' ':
+                self.log(client, "Moving right.")
+            if key == Qt.Key_Space:
                 self.keys[4] = '1'
+                self.log(client, "Firing.")
+            if key == Qt.Key_Up:
+                self.keys[5] = '1'
+                self.log(client, "Panning up.")
+            if key == Qt.Key_Down:
+                self.keys[6] = '1'
+                self.log(client, "Panning down.")
+            if key == Qt.Key_Left:
+                self.keys[7] = '1'
+                self.log(client, "Panning left.")
+            if key == Qt.Key_Right:
+                self.keys[8] = '1'
+                self.log(client, "Panning right.")
+            self.send_commands = True
 
     def keyReleaseEvent(self, event):
+        key = event.key()
         if not event.isAutoRepeat():
-            if event.text() == 'w':
+            if key == Qt.Key_W:
                 self.keys[0] = '0'
-                self.log(client, "Stopped moving forward.")
-            if event.text() == 'a':
+                self.log(client, "Stop moving forward.")
+            if key == Qt.Key_A:
                 self.keys[1] = '0'
-            if event.text() == 's':
+                self.log(client, "Stop moving left.")
+            if key == Qt.Key_S:
                 self.keys[2] = '0'
-            if event.text() == 'd':
+                self.log(client, "Stop moving back.")
+            if key == Qt.Key_D:
                 self.keys[3] = '0'
-            if event.text() == ' ':
+                self.log(client, "Stop moving right.")
+            if key == Qt.Key_Space:
                 self.keys[4] = '0'
+                self.log(client, "Stop firing.")
+            if key == Qt.Key_Up:
+                self.keys[5] = '0'
+                self.log(client, "Stop panning up.")
+            if key == Qt.Key_Down:
+                self.keys[6] = '0'
+                self.log(client, "Stop panning down.")
+            if key == Qt.Key_Left:
+                self.keys[7] = '0'
+                self.log(client, "Stop panning left.")
+            if key == Qt.Key_Right:
+                self.keys[8] = '0'
+                self.log(client, "Stop panning right.")
+            self.send_commands = True
 
     def create_label_panel(self):
         TL_L_widget = QWidget()
@@ -301,6 +343,10 @@ class MainWindow(QWidget):
 
 
 def main():
+
+    myappid = 'rfes-control-center'  # arbitrary string
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
     app = QApplication(sys.argv)
     main_window = MainWindow()
     main_window.show()

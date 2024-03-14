@@ -4,32 +4,34 @@ from socket import *
 import sys
 import datetime
 import numpy
-from gpiozero import PWMLED
+# from gpiozero import PWMLED
 from time import sleep
 
 HOST = "localhost"  # Standard loopback interface address (localhost)
+# Pi server = 172.20.10.3
 PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
 
-led = PWMLED("BOARD32")
+# led = PWMLED("BOARD32")
 
 
 def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
-    return string_data[len(string_data) - 5: len(string_data)]
+    return string_data[len(string_data) - 9: len(string_data)]
 
 
 def execute_commands(bits):
-    # print(bits)
+    print(bits)
     if len(bits) != 5:
         return
 
     if bits[0] == '1':
-        led.value = 1
-        print("on")
+        pass
+        # led.value = 1
+        # print("forward")
     else:
-        led.value = 0
-        print("off")
-
+        pass
+        # led.value = 0
+        # print("stop")
 
 with socket(AF_INET, SOCK_STREAM) as s:
     s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -44,6 +46,7 @@ with socket(AF_INET, SOCK_STREAM) as s:
                 try:
                     data = conn.recv(1024)
                     if data:
+                        print(data)
                         # print("data is " + get_most_recent(data))
                         execute_commands(get_most_recent(data))
                     if not data:
