@@ -21,7 +21,7 @@ def get_most_recent(data_bytes):
 
 def execute_commands(bits):
     print(bits)
-    if len(bits) != 5:
+    if len(bits) != 9:
         return
 
     if bits[0] == '1':
@@ -32,6 +32,7 @@ def execute_commands(bits):
         pass
         # led.value = 0
         # print("stop")
+
 
 with socket(AF_INET, SOCK_STREAM) as s:
     s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
