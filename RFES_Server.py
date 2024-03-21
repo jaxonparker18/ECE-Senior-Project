@@ -13,7 +13,7 @@ import imutils
 def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
-    
+
 
 def execute_commands(bits):
     print(bits)

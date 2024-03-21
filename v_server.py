@@ -7,7 +7,7 @@ import imutils
 def run():
     video_path = 0
 
-    BUFF_SIZE = 65536
+    BUFF_SIZE = 1000000
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
     HOST = "localhost"
@@ -24,7 +24,7 @@ def run():
         while vid.isOpened():
             _, frame = vid.read()
             frame = imutils.resize(frame, width=WIDTH)
-            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
             message = base64.b64encode(buffer)
             server_socket.sendto(message, client_addr)
             frame = cv2.putText(frame, str(fps), (10, 40), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.5, (0, 255, 0), 2)
