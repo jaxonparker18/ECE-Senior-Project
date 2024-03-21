@@ -5,6 +5,7 @@ import sys
 import datetime
 import numpy
 from time import sleep
+import math
 
 
 class Motor:
@@ -12,11 +13,19 @@ class Motor:
         self.value = 0
 
 
-# from gpiozero import PWMLED
+from gpiozero import PWMLED
+left_motorA = PWMLED("BOARD11")
+left_motorB = PWMLED("BOARD13")
+right_motorA = PWMLED("BOARD16")
+right_motorB = PWMLED("BOARD18")
+left_motor = 0
+right_motor = 1
+
 # right_motor = PWMLED("BOARD32")
 # left_motor = PWMLED("BOARD33")
-left_motor = Motor()
-right_motor = Motor()
+
+# left_motor = Motor()
+# right_motor = Motor()
 
 HOST = "localhost"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
@@ -29,10 +38,30 @@ def get_most_recent(data_bytes):
 
 
 def set_motor(left, right):
-    global left_motor
-    global right_motor
-    left_motor.value = left
-    right_motor.value = right
+    global left_motorA
+    global left_motorB
+    global right_motorA
+    global right_motorB
+
+    if left == 0:
+        left_motorA.value = 0
+        left_motorB.value = 0
+    elif left > 0:
+        left_motorA.value = left
+        left_motorB.value = 0
+    else:
+        left_motorA.value = 0
+        left_motorB.value = abs(left)
+
+    if right == 0:
+        right_motorA.value = 0
+        right_motorB.value = 0
+    elif right > 0:
+        right_motorA.value = right
+        right_motorB.value = 0
+    else:
+        right_motorA.value = 0
+        right_motorB.value = abs(right)
 
 
 def execute_commands(bits):
@@ -45,23 +74,25 @@ def execute_commands(bits):
                                                int(left), int(right)
 
     if w and a:
-        set_motor(0.5, 1)
+        set_motor(0.5, 0.75)
     elif w and d:
-        set_motor(1, 0.5)
+        set_motor(0.75, 0.5)
     elif w and s:
         set_motor(0, 0)
     elif s and a:
-        pass
+        set_motor(-0.5, -0.75)
     elif s and d:
-        pass
+        set_motor(-0.75, -0.5)
     elif w:
-        set_motor(1, 1)
+        set_motor(0.75, 0.75)
     elif s:
-        pass
+        set_motor(-0.75, -0.75)
     elif a:
-        set_motor(0, 1)
+        set_motor(-0.75, 0.75)
     elif d:
-        set_motor(1, 0)
+        set_motor(0.75, -0.75)
+    else:
+        set_motor(0, 0)
 
 
 def execute_w(cond):
