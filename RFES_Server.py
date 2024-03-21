@@ -6,16 +6,33 @@ import datetime
 import numpy
 from time import sleep
 
+
+class Motor:
+    def __init__(self):
+        self.value = 0
+
+
 # from gpiozero import PWMLED
-# led = PWMLED("BOARD32")
+# right_motor = PWMLED("BOARD32")
+# left_motor = PWMLED("BOARD33")
+left_motor = Motor()
+right_motor = Motor()
 
 HOST = "localhost"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
 PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
 
+
 def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
+
+
+def set_motor(left, right):
+    global left_motor
+    global right_motor
+    left_motor.value = left
+    right_motor.value = right
 
 
 def execute_commands(bits):
@@ -23,15 +40,28 @@ def execute_commands(bits):
     if len(bits) != 9:
         return
 
-    execute_w(bits[0])
-    execute_a(bits[1])
-    execute_s(bits[2])
-    execute_d(bits[3])
-    execute_space(bits[4])
-    execute_up(bits[5])
-    execute_down(bits[6])
-    execute_left(bits[7])
-    execute_right(bits[8])
+    w, a, s, d, space, up, down, left, right = bits
+    w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), \
+                                               int(left), int(right)
+
+    if w and a:
+        set_motor(0.5, 1)
+    elif w and d:
+        set_motor(1, 0.5)
+    elif w and s:
+        set_motor(0, 0)
+    elif s and a:
+        pass
+    elif s and d:
+        pass
+    elif w:
+        set_motor(1, 1)
+    elif s:
+        pass
+    elif a:
+        set_motor(0, 1)
+    elif d:
+        set_motor(1, 0)
 
 
 def execute_w(cond):
@@ -104,14 +134,14 @@ def execute_right(cond):
         pass
 
 
-with socket(AF_INET, SOCK_STREAM) as s:
-    s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    s.bind((HOST, PORT))
-    s.listen()
+with socket(AF_INET, SOCK_STREAM) as soc:
+    soc.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    soc.bind((HOST, PORT))
+    soc.listen()
     print("Server online.")
     while True:
         try:
-            conn, addr = s.accept()
+            conn, addr = soc.accept()
             print(f"Control center connected at {addr}.")
             conn.sendall((''.join("Connection established.")).encode('utf-8'))
             while True:
@@ -126,12 +156,12 @@ with socket(AF_INET, SOCK_STREAM) as s:
                         break
                 except KeyboardInterrupt:
                     print("Disconnected from control center")
-                    s.close()
+                    soc.close()
                     sys.exit(0)
                 except:
                     print("Disconnected from control center")
                     break
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
-            s.close()
+            soc.close()
             sys.exit(0)
