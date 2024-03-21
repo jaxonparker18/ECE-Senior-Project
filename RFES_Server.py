@@ -13,7 +13,7 @@ import imutils
 def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
-
+    
 
 def execute_commands(bits):
     print(bits)
@@ -168,7 +168,7 @@ def handle_udp(client_socket):
         while vid.isOpened():
             _, frame = vid.read()
             frame = imutils.resize(frame, width=WIDTH)
-            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
             message = base64.b64encode(buffer)
             client_socket.sendto(message, client_addr)
             frame = cv2.putText(frame, str(fps), (10, 40), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -187,7 +187,7 @@ def handle_udp(client_socket):
             cnt += 1
 
 
-BUFF_SIZE = 65536
+BUFF_SIZE = 100000
 
 HOST = "localhost"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3

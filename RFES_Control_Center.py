@@ -43,7 +43,7 @@ class VideoThreadPiCam(QThread):
         # picam2.configure(camera_config)
         # picam2.start()
 
-        BUFF_SIZE = 65536
+        BUFF_SIZE = 100000
         self.client_socket = socket(AF_INET, SOCK_DGRAM)
         self.client_socket.setsockopt(SOL_SOCKET, SO_RCVBUF, BUFF_SIZE)
         UDP_HOST = "localhost"
@@ -106,7 +106,6 @@ class MainWindow(QWidget):
         self.coms_thread = None
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
-        self.send_commands = False
 
         self.display_width = 1500
         self.display_height = 840
@@ -152,22 +151,17 @@ class MainWindow(QWidget):
         self.display_logs()
         self.create_connect_disconnect_panel()
 
-    def server_connection(self):
+    def send_commands(self):
+        try:
+            self.socket.sendall((''.join(self.keys)).encode('utf-8'))
 
-        while self.status == "CONNECTED":
-            try:
-                if self.send_commands:
-                    self.socket.sendall((''.join(self.keys)).encode('utf-8'))
-                    self.send_commands = False
-
-            except:
-                self.status = "DISCONNECTED"
-                # worker_thread = WorkerThread(self, server, "Connection with server closed.")
-                # worker_thread.update_signal.connect(self.log)
-                # worker_thread.start()
-                # self.log(client, "Connection with server closed.")
-                # self.update_status()
-                break
+        except:
+            self.status = "DISCONNECTED"
+            # worker_thread = WorkerThread(self, server, "Connection with server closed.")
+            # worker_thread.update_signal.connect(self.log)
+            # worker_thread.start()
+            # self.log(client, "Connection with server closed.")
+            # self.update_status()
 
     def connect_to_server(self):
         self.c_d_button.clearFocus()
@@ -189,8 +183,8 @@ class MainWindow(QWidget):
             # start the thread
             self.feed_thread.start()
 
-            self.coms_thread = Thread(target=self.server_connection)
-            self.coms_thread.start()
+            # self.coms_thread = Thread(target=self.server_connection)
+            # self.coms_thread.start()
 
             self.update()
 
@@ -295,7 +289,7 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
                 self.log(client, "Panning right.")
-            self.send_commands = True
+            self.send_commands()
 
     def keyReleaseEvent(self, event):
         key = event.key()
@@ -327,7 +321,7 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '0'
                 self.log(client, "Stop panning right.")
-            self.send_commands = True
+            self.send_commands()
 
     def create_label_panel(self):
         TL_L_widget = QWidget()
