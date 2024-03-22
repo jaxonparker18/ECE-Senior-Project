@@ -15,7 +15,8 @@ class Motor:
 
 # UART
 import serial
-serial_port = '/dev/ttyAMA10'
+
+serial_port = '/dev/ttyAMA0'
 baud_rate = 115200
 ser = serial.Serial(serial_port, baud_rate)
 
@@ -71,6 +72,12 @@ def set_motor(left, right):
         right_motorB.value = abs(right)
 
 
+def send_to_uart(bits):
+    for i in range(len(bits)):
+        uart_command = str(bits[i]).encode('utf-8')
+        ser.write(uart_command)
+
+
 def execute_commands(bits):
     print(bits)
     if len(bits) != 9:
@@ -78,7 +85,7 @@ def execute_commands(bits):
 
     w, a, s, d, space, up, down, left, right = bits
     w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
-                                                left), int(right)
+        left), int(right)
 
     # MOVEMENT
     if w and a:
@@ -103,8 +110,7 @@ def execute_commands(bits):
         set_motor(0, 0)
 
     # FIRING MECHANISM
-    uart_command = str.encode(str(bits[4:0]))
-    ser.write(uart_command)
+    send_to_uart(bits[4:])
 
 
 def execute_w(cond):
