@@ -13,7 +13,14 @@ class Motor:
         self.value = 0
 
 
+# UART
+import serial
+serial_port = '/dev/ttySO'
+baud_rate = 115200
+ser = serial.Serial(serial_port, baud_rate)
+
 from gpiozero import PWMLED
+
 left_motorA = PWMLED("BOARD11")
 left_motorB = PWMLED("BOARD13")
 right_motorA = PWMLED("BOARD16")
@@ -70,9 +77,10 @@ def execute_commands(bits):
         return
 
     w, a, s, d, space, up, down, left, right = bits
-    w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), \
-                                               int(left), int(right)
+    w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
+                                                left), int(right)
 
+    # MOVEMENT
     if w and a:
         set_motor(0.5, 0.75)
     elif w and d:
@@ -93,6 +101,11 @@ def execute_commands(bits):
         set_motor(0.75, -0.75)
     else:
         set_motor(0, 0)
+
+    # FIRING MECHANISM
+    uart_command = b''.join(bits[4:])
+    print(str(uart_command) + "sent!")
+    ser.write(uart_command)
 
 
 def execute_w(cond):
@@ -175,6 +188,9 @@ with socket(AF_INET, SOCK_STREAM) as soc:
             conn, addr = soc.accept()
             print(f"Control center connected at {addr}.")
             conn.sendall((''.join("Connection established.")).encode('utf-8'))
+            # initial command for STM
+            ser.write(b'00000')
+            print("init command: " + str(b'00000'))
             while True:
                 try:
                     data = conn.recv(9, MSG_WAITALL)
@@ -184,10 +200,12 @@ with socket(AF_INET, SOCK_STREAM) as soc:
                         execute_commands(get_most_recent(data))
                     if not data:
                         print("Disconnected from control center")
+                        ser.close()
                         break
                 except KeyboardInterrupt:
                     print("Disconnected from control center")
                     soc.close()
+                    ser.close()
                     sys.exit(0)
                 except:
                     print("Disconnected from control center")
@@ -195,4 +213,5 @@ with socket(AF_INET, SOCK_STREAM) as soc:
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             soc.close()
+            ser.close()
             sys.exit(0)
