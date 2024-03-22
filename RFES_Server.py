@@ -15,7 +15,7 @@ class Motor:
 
 # UART
 import serial
-serial_port = '/dev/ttySO'
+serial_port = '/dev/ttyAMA10'
 baud_rate = 115200
 ser = serial.Serial(serial_port, baud_rate)
 
@@ -34,7 +34,7 @@ right_motor = 1
 # left_motor = Motor()
 # right_motor = Motor()
 
-HOST = "localhost"  # Standard loopback interface address (localhost)
+HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
 PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
 
@@ -103,8 +103,7 @@ def execute_commands(bits):
         set_motor(0, 0)
 
     # FIRING MECHANISM
-    uart_command = b''.join(bits[4:])
-    print(str(uart_command) + "sent!")
+    uart_command = str.encode(str(bits[4:0]))
     ser.write(uart_command)
 
 
@@ -188,9 +187,8 @@ with socket(AF_INET, SOCK_STREAM) as soc:
             conn, addr = soc.accept()
             print(f"Control center connected at {addr}.")
             conn.sendall((''.join("Connection established.")).encode('utf-8'))
-            # initial command for STM
-            ser.write(b'00000')
-            print("init command: " + str(b'00000'))
+            # initial command to pins
+            execute_commands("000000000")
             while True:
                 try:
                     data = conn.recv(9, MSG_WAITALL)
@@ -200,7 +198,6 @@ with socket(AF_INET, SOCK_STREAM) as soc:
                         execute_commands(get_most_recent(data))
                     if not data:
                         print("Disconnected from control center")
-                        ser.close()
                         break
                 except KeyboardInterrupt:
                     print("Disconnected from control center")
@@ -208,6 +205,7 @@ with socket(AF_INET, SOCK_STREAM) as soc:
                     ser.close()
                     sys.exit(0)
                 except:
+                    print("Something broke!")
                     print("Disconnected from control center")
                     break
         except KeyboardInterrupt:
