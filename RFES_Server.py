@@ -1,3 +1,4 @@
+# echo-server.py
 import threading
 from socket import *
 import sys
@@ -6,13 +7,60 @@ import cv2
 import time
 import numpy as np
 import imutils
+# PI EXCLUSIVE
+import serial
+from gpiozero import PWMLED
 
-# from gpiozero import PWMLED
-# led = PWMLED("BOARD32")
+# UART
+serial_port = '/dev/ttyAMA0'
+baud_rate = 115200
+ser = serial.Serial(serial_port, baud_rate)
+
+# GPIO MOTOR
+left_motorA = PWMLED("BOARD11")
+left_motorB = PWMLED("BOARD13")
+right_motorA = PWMLED("BOARD16")
+right_motorB = PWMLED("BOARD18")
+left_motor = 0
+right_motor = 1
+
 
 def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
+
+
+def set_motor(left, right):
+    global left_motorA
+    global left_motorB
+    global right_motorA
+    global right_motorB
+
+    if left == 0:
+        left_motorA.value = 0
+        left_motorB.value = 0
+    elif left > 0:
+        left_motorA.value = left
+        left_motorB.value = 0
+    else:
+        left_motorA.value = 0
+        left_motorB.value = abs(left)
+
+    if right == 0:
+        right_motorA.value = 0
+        right_motorB.value = 0
+    elif right > 0:
+        right_motorA.value = right
+        right_motorB.value = 0
+    else:
+        right_motorA.value = 0
+        right_motorB.value = abs(right)
+
+
+def send_to_uart(bits):
+    for i in range(len(bits)):
+        uart_command = str(bits[i]).encode('utf-8')
+        ser.write(uart_command)
 
 
 def execute_commands(bits):
@@ -20,86 +68,34 @@ def execute_commands(bits):
     if len(bits) != 9:
         return
 
-    execute_w(bits[0])
-    execute_a(bits[1])
-    execute_s(bits[2])
-    execute_d(bits[3])
-    execute_space(bits[4])
-    execute_up(bits[5])
-    execute_down(bits[6])
-    execute_left(bits[7])
-    execute_right(bits[8])
+    w, a, s, d, space, up, down, left, right = bits
+    w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
+        left), int(right)
 
-
-def execute_w(cond):
-    if cond == '1':
-        print("forward")
-        # ramping up speed
-        # for v in numpy.arange(0, 1, 0.001):
-        #     # led.value = v
-
-        # led.value = 1
-
+    # MOVEMENT
+    if w and a:
+        set_motor(0.5, 0.75)
+    elif w and d:
+        set_motor(0.75, 0.5)
+    elif w and s:
+        set_motor(0, 0)
+    elif s and a:
+        set_motor(-0.5, -0.75)
+    elif s and d:
+        set_motor(-0.75, -0.5)
+    elif w:
+        set_motor(0.75, 0.75)
+    elif s:
+        set_motor(-0.75, -0.75)
+    elif a:
+        set_motor(-0.75, 0.75)
+    elif d:
+        set_motor(0.75, -0.75)
     else:
-        # led.value = 0
-        print("stop forward")
+        set_motor(0, 0)
 
-
-def execute_a(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_s(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_d(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_space(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_up(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_down(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_left(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
-
-def execute_right(cond):
-    if cond == '1':
-        pass
-    else:
-        pass
-
+    # FIRING MECHANISM
+    send_to_uart(bits[4:])
 
 def handle_tcp():
     while True:
@@ -112,7 +108,7 @@ def handle_tcp():
                     data = client_socket.recv(9, MSG_WAITALL)
                     if data:
                         # print(data)
-                        print("data is " + get_most_recent(data))
+                        # print("data is " + get_most_recent(data))
                         execute_commands(get_most_recent(data))
                     if not data:
                         print("Disconnected from control center")
@@ -120,6 +116,7 @@ def handle_tcp():
                 except KeyboardInterrupt:
                     print("Disconnected from control center")
                     client_socket.close()
+                    ser.close()
                     sys.exit(0)
                 except:
                     print("Disconnected from control center")
@@ -127,6 +124,7 @@ def handle_tcp():
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             client_socket.close()
+            ser.close()
             sys.exit(0)
 
 
@@ -189,7 +187,8 @@ def handle_udp(client_socket):
 
 BUFF_SIZE = 100000
 
-HOST = "localhost"  # Standard loopback interface address (localhost)
+
+HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
 
 # TCP SOCKET
