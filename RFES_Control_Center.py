@@ -55,16 +55,6 @@ class VideoThreadPiCam(QThread):
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
                     self.change_pixmap_signal.emit(frame)
-                    self.grab_frame = False
-                # 11572
-                # 20440
-                # 11684
-                # 17520
-                # 14452
-                # 20440
-                # 11608
-                # 20440
-                # 11644
             except Exception as e:
                 pass
                 # print(e)
@@ -156,11 +146,6 @@ class MainWindow(QWidget):
 
         except:
             self.status = "DISCONNECTED"
-            # worker_thread = WorkerThread(self, server, "Connection with server closed.")
-            # worker_thread.update_signal.connect(self.log)
-            # worker_thread.start()
-            # self.log(client, "Connection with server closed.")
-            # self.update_status()
 
     def connect_to_server(self):
         self.c_d_button.clearFocus()
@@ -176,15 +161,12 @@ class MainWindow(QWidget):
             self.status = "CONNECTED"
             self.update_status()
 
-            self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(self.port_entry.text()) + 1)
+            self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
+                self.port_entry.text()) + 1)
             # connect its signal to the update_image slot
             self.feed_thread.change_pixmap_signal.connect(self.update_image)
             # start the thread
             self.feed_thread.start()
-            print("STARTING THREAD")
-
-            # self.coms_thread = Thread(target=self.server_connection)
-            # self.coms_thread.start()
 
             self.update()
 
@@ -195,16 +177,6 @@ class MainWindow(QWidget):
             self.socket.close()
 
     def display_web(self):
-        # self.browser = QWebEngineView()
-        # self.browser.setFixedSize(1500, 840)
-        # self.browser.setUrl(QUrl("http://google.com"))
-
-        # self.no_feed = QLabel()
-        # self.no_feed.setFixedSize(1500, 840)
-        # self.no_feed.setPixmap(QPixmap("res/not_connected.png"))
-        # self.no_feed.setAlignment(Qt.AlignCenter)
-        # self.bot_layout.addWidget(self.no_feed)
-
         self.feed = QLabel()
         self.feed.setFixedSize(1500, 840)
         self.feed.setPixmap(QPixmap("res/not_connected.png"))

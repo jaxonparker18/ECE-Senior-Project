@@ -118,7 +118,7 @@ def execute_commands(bits):
     send_to_uart(bits[4:])
 
 
-def handle_tcp():
+def handle_commands():
     while True:
         try:
             client_socket, tcp_address = tcp_socket.accept()
@@ -150,15 +150,15 @@ def handle_tcp():
             sys.exit(0)
 
 
-def handle_udp(client_socket):
+def handle_video():
     picam2 = Picamera2()
-    picam2.configure(picam2.create_preview_configuration(
-        main={"format": 'XRGB8888', "size": (1640, 1232)}))  # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
+    # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
+    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1640, 1232)}))
     picam2.start()
 
     while True:
         client_sock, udp_address = udp_socket.accept()
-        print(f"FEED center connected at {udp_address}.")
+        print(f"Video feed connected at {udp_address}.")
         while True:
             im = picam2.capture_array()
             encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -187,10 +187,10 @@ udp_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 udp_socket.bind((HOST, UDP_PORT))
 udp_socket.listen(1)
 
-tcp_thread = threading.Thread(target=handle_tcp, args=())
+tcp_thread = threading.Thread(target=handle_commands, args=())
 tcp_thread.start()
 
-udp_thread = threading.Thread(target=handle_udp, args=(udp_socket,))
+udp_thread = threading.Thread(target=handle_video, args=())
 udp_thread.start()
 
 print("Server online...")
