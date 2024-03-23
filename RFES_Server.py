@@ -1,4 +1,7 @@
 # echo-server.py
+import sys
+
+sys.path.append('/usr/lib/python3/dist-packages')
 import threading
 from socket import *
 import sys
@@ -7,9 +10,13 @@ import cv2
 import time
 import numpy as np
 import imutils
+import io
 # PI EXCLUSIVE
 import serial
-from gpiozero import PWMLED
+from gpiozero import Device, PWMLED
+from picamera2 import Picamera2
+from picamera2.encoders import H264Encoder
+from picamera2.outputs import FileOutput
 
 # UART
 serial_port = '/dev/ttyAMA0'
@@ -23,6 +30,19 @@ right_motorA = PWMLED("BOARD16")
 right_motorB = PWMLED("BOARD18")
 left_motor = 0
 right_motor = 1
+
+
+def clean_up():
+    global left_motorA
+    global left_motorB
+    global right_motorA
+    global right_motorB
+    global ser
+    left_motorA.close()
+    left_motorB.close()
+    right_motorA.close()
+    right_motorB.close()
+    ser.close()
 
 
 def get_most_recent(data_bytes):
@@ -97,6 +117,7 @@ def execute_commands(bits):
     # FIRING MECHANISM
     send_to_uart(bits[4:])
 
+
 def handle_tcp():
     while True:
         try:
@@ -116,77 +137,36 @@ def handle_tcp():
                 except KeyboardInterrupt:
                     print("Disconnected from control center")
                     client_socket.close()
-                    ser.close()
+                    clean_up()
                     sys.exit(0)
                 except:
                     print("Disconnected from control center")
+                    clean_up()
                     break
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             client_socket.close()
-            ser.close()
+            clean_up()
             sys.exit(0)
 
 
 def handle_udp(client_socket):
-    vid = cv2.VideoCapture(0)   # webcam
-    fps, st, frames_to_count, cnt = (0, 0, 20, 0)
-    # # Configure the Raspberry Pi camera
-    # camera = picamera.PiCamera()
-    #
-    # # Set camera resolution (optional)
-    # camera.resolution = (640, 480)
-    #
-    # # Set up a stream for image capture
-    # stream = io.BytesIO()
-    #
-    # # Start capturing video
-    # camera.start_recording(stream, format='h264')
-    #
-    # try:
-    #     while True:
-    #         # Capture video frame
-    #         stream.seek(0)
-    #         data = stream.read()
-    #
-    #         # Send frame over UDP
-    #         udp_socket.sendto(data, ("destination_IP", destination_port))
-    #
-    # finally:
-    #     # Stop recording and clean up
-    #     camera.stop_recording()
-    #     camera.close()
-    #     udp_socket.close()
+    picam2 = Picamera2()
+    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1920, 1080)}))
+    picam2.start()
 
-    # stream video
     while True:
-        msg, client_addr = client_socket.recvfrom(BUFF_SIZE)
-        print(msg)
-        WIDTH = 840
-        while vid.isOpened():
-            _, frame = vid.read()
-            frame = imutils.resize(frame, width=WIDTH)
-            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        client_sock, udp_address = udp_socket.accept()
+        print(f"FEED center connected at {udp_address}.")
+        while True:
+            im = picam2.capture_array()
+            encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 80])
             message = base64.b64encode(buffer)
-            client_socket.sendto(message, client_addr)
-            frame = cv2.putText(frame, str(fps), (10, 40), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.imshow("TRANSMITTING VIDEO", frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                client_socket.close()
-                break
-            if cnt == frames_to_count:
-                try:
-                    fps = round(frames_to_count/(time.time() - st))
-                    st = time.time()
-                    cnt = 0
-                except:
-                    pass
-            cnt += 1
+            print(len(message))
+            client_sock.sendto(message, udp_address)
 
 
-BUFF_SIZE = 100000
-
+BUFF_SIZE = 6000000
 
 HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
@@ -196,22 +176,23 @@ TCP_PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
 tcp_socket = socket(AF_INET, SOCK_STREAM)
 tcp_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 tcp_socket.bind((HOST, TCP_PORT))
-tcp_socket.listen(0)
+tcp_socket.listen(1)
 
 # UDP SOCKET
 UDP_PORT = 2101  # Port to listen on (non-privileged ports are > 1023)
-udp_socket = socket(AF_INET, SOCK_DGRAM)
+udp_socket = socket(AF_INET, SOCK_STREAM)
 udp_socket.setsockopt(SOL_SOCKET, SO_RCVBUF, BUFF_SIZE)
 udp_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 udp_socket.bind((HOST, UDP_PORT))
-
-print("Server online...")
+udp_socket.listen(1)
 
 tcp_thread = threading.Thread(target=handle_tcp, args=())
 tcp_thread.start()
 
 udp_thread = threading.Thread(target=handle_udp, args=(udp_socket,))
 udp_thread.start()
+
+print("Server online...")
 
 tcp_thread.join()
 udp_thread.join()

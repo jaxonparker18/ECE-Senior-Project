@@ -1,8 +1,10 @@
 # echo-client.py
+import traceback
 from datetime import datetime
+import time
 import sys
 from socket import *
-
+import multiprocessing
 from threading import Thread
 
 from PyQt5.QtGui import *
@@ -12,13 +14,56 @@ from PyQt5.QtCore import *
 from PyQt5.QtWebEngineWidgets import *
 import ctypes
 
+import cv2
+import numpy as np
+import base64
 
-HOST = "localhost"  # The server's hostname or IP address
+HOST = "172.20.10.3"  # The server's hostname or IP address
+# Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
 client = 0
 server = 1
 
+
+class VideoThreadPiCam(QThread):
+
+    change_pixmap_signal = pyqtSignal(np.ndarray)
+
+    def __init__(self, parent, status, host, port):
+        super().__init__(parent)
+        self.connected = status
+        self.client_socket = None
+        self.host = host
+        self.port = port
+        self.grab_frame = True
+
+    def run(self):
+        BUFF_SIZE = 100000
+        addr = (self.host, self.port)
+        self.client_socket = socket(AF_INET, SOCK_STREAM)
+        self.client_socket.connect(addr)
+        while True:
+            try:
+                packet = self.client_socket.recv(BUFF_SIZE)
+                print(len(packet))
+                data = base64.b64decode(packet)
+                frame = np.frombuffer(data, dtype=np.uint8)
+                frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+                self.change_pixmap_signal.emit(frame)
+                self.grab_frame = False
+                # 11572
+                # 20440
+                # 11684
+                # 17520
+                # 14452
+                # 20440
+                # 11608
+                # 20440
+                # 11644
+            except Exception as e:
+                pass
+                # print(e)
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
@@ -51,11 +96,14 @@ class MainWindow(QWidget):
         self.c_d_button = QPushButton()
         self.socket = None
         self.browser = None
-        self.no_feed = None
-
+        self.feed = None
+        self.feed_thread = None
+        self.coms_thread = None
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
-        self.send_commands = False
+
+        self.display_width = 1500
+        self.display_height = 840
 
         # default values
         self.defaultIP = str(HOST)
@@ -98,23 +146,17 @@ class MainWindow(QWidget):
         self.display_logs()
         self.create_connect_disconnect_panel()
 
-    def server_connection(self):
+    def send_commands(self):
+        try:
+            self.socket.sendall((''.join(self.keys)).encode('utf-8'))
 
-        while self.status == "CONNECTED":
-            try:
-                if self.send_commands:
-                    self.socket.sendall((''.join(self.keys)).encode('utf-8'))
-                    self.send_commands = False
-
-            except:
-                self.status = "DISCONNECTED"
-                worker_thread = WorkerThread(self, server, "Connection with server closed.")
-                worker_thread.update_signal.connect(self.log)
-                # worker_thread.update_signal.connect(self.update_status())
-                worker_thread.start()
-                # self.log(client, "Connection with server closed.")
-                # self.update_status()
-                break
+        except:
+            self.status = "DISCONNECTED"
+            # worker_thread = WorkerThread(self, server, "Connection with server closed.")
+            # worker_thread.update_signal.connect(self.log)
+            # worker_thread.start()
+            # self.log(client, "Connection with server closed.")
+            # self.update_status()
 
     def connect_to_server(self):
         self.c_d_button.clearFocus()
@@ -129,8 +171,19 @@ class MainWindow(QWidget):
                 return
             self.status = "CONNECTED"
             self.update_status()
-            thread = Thread(target=self.server_connection)
-            thread.start()
+
+            self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(self.port_entry.text()) + 1)
+            # connect its signal to the update_image slot
+            self.feed_thread.change_pixmap_signal.connect(self.update_image)
+            # start the thread
+            self.feed_thread.start()
+            print("STARTING THREAD")
+
+            # self.coms_thread = Thread(target=self.server_connection)
+            # self.coms_thread.start()
+
+            self.update()
+
         else:
             self.status = "DISCONNECTED"
             self.log(client, "Connection closed.")
@@ -138,15 +191,39 @@ class MainWindow(QWidget):
             self.socket.close()
 
     def display_web(self):
-        self.browser = QWebEngineView()
-        self.browser.setFixedSize(1500, 840)
-        self.browser.setUrl(QUrl("http://google.com"))
+        # self.browser = QWebEngineView()
+        # self.browser.setFixedSize(1500, 840)
+        # self.browser.setUrl(QUrl("http://google.com"))
 
-        self.no_feed = QLabel()
-        self.no_feed.setFixedSize(1500, 840)
-        self.no_feed.setPixmap(QPixmap("res/not_connected.png"))
-        self.no_feed.setAlignment(Qt.AlignCenter)
-        self.bot_layout.addWidget(self.no_feed)
+        # self.no_feed = QLabel()
+        # self.no_feed.setFixedSize(1500, 840)
+        # self.no_feed.setPixmap(QPixmap("res/not_connected.png"))
+        # self.no_feed.setAlignment(Qt.AlignCenter)
+        # self.bot_layout.addWidget(self.no_feed)
+
+        self.feed = QLabel()
+        self.feed.setFixedSize(1500, 840)
+        self.feed.setPixmap(QPixmap("res/not_connected.png"))
+        self.feed.setAlignment(Qt.AlignCenter)
+        self.bot_layout.addWidget(self.feed)
+
+
+    @pyqtSlot(np.ndarray)
+    def update_image(self, cv_img):
+        """Updates the image_label with a new opencv image"""
+        display_img = cv_img
+        qt_img = self.convert_cv_qt(display_img)
+        self.feed.setPixmap(qt_img)
+        self.feed_thread.grab_frame = True
+
+    def convert_cv_qt(self, cv_img):
+        """Convert from an opencv image to QPixmap"""
+        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        p = convert_to_Qt_format.scaled(self.display_width, self.display_height)        # Qt.KeepAspectRatio
+        return QPixmap.fromImage(p)
 
     def display_logs(self):
         logs_w = QWidget()
@@ -209,7 +286,7 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
                 self.log(client, "Panning right.")
-            self.send_commands = True
+            self.send_commands()
 
     def keyReleaseEvent(self, event):
         key = event.key()
@@ -241,7 +318,7 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '0'
                 self.log(client, "Stop panning right.")
-            self.send_commands = True
+            self.send_commands()
 
     def create_label_panel(self):
         TL_L_widget = QWidget()
@@ -322,9 +399,10 @@ class MainWindow(QWidget):
             self.status_label.setStyleSheet("color:red")
 
             # GUI update
-            self.bot_layout.removeWidget(self.browser)
-            self.browser.setParent(None)
-            self.bot_layout.insertWidget(0, self.no_feed)
+            # self.bot_layout.removeWidget(self.browser)
+            # self.browser.setParent(None)
+            # self.bot_layout.insertWidget(0, self.feed)
+            self.feed.setPixmap(QPixmap("res/not_connected.png"))
             self.update()
 
         else:
@@ -334,12 +412,10 @@ class MainWindow(QWidget):
             self.status_label.setText(self.status)
             self.status_label.setStyleSheet("color:green")
 
-            self.bot_layout.removeWidget(self.no_feed)
-            self.no_feed.setParent(None)
-            self.bot_layout.insertWidget(0, self.browser)
-            self.update()
-
-
+            # self.bot_layout.removeWidget(self.feed)
+            # self.feed.setParent(None)
+            # self.bot_layout.insertWidget(0, self.browser)
+            # create the video capture thread
 
 
 def main():
