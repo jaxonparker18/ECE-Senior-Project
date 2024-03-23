@@ -39,19 +39,23 @@ class VideoThreadPiCam(QThread):
         self.grab_frame = True
 
     def run(self):
-        BUFF_SIZE = 100000
+        BUFF_SIZE = 65536
         addr = (self.host, self.port)
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect(addr)
+        buffer = b''
         while True:
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
-                print(len(packet))
-                data = base64.b64decode(packet)
-                frame = np.frombuffer(data, dtype=np.uint8)
-                frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-                self.change_pixmap_signal.emit(frame)
-                self.grab_frame = False
+                buffer += packet
+                while b'\0' in buffer:
+                    message, buffer = buffer.split(b'\0', 1)
+                    print(len(message))
+                    data = base64.b64decode(message)
+                    frame = np.frombuffer(data, dtype=np.uint8)
+                    frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+                    self.change_pixmap_signal.emit(frame)
+                    self.grab_frame = False
                 # 11572
                 # 20440
                 # 11684

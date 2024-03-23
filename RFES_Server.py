@@ -152,7 +152,8 @@ def handle_tcp():
 
 def handle_udp(client_socket):
     picam2 = Picamera2()
-    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1920, 1080)}))
+    picam2.configure(picam2.create_preview_configuration(
+        main={"format": 'XRGB8888', "size": (1640, 1232)}))  # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
     picam2.start()
 
     while True:
@@ -160,13 +161,13 @@ def handle_udp(client_socket):
         print(f"FEED center connected at {udp_address}.")
         while True:
             im = picam2.capture_array()
-            encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            message = base64.b64encode(buffer)
+            encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            message = base64.b64encode(buffer) + b'\0'
             print(len(message))
             client_sock.sendto(message, udp_address)
 
 
-BUFF_SIZE = 6000000
+BUFF_SIZE = 65536
 
 HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3
