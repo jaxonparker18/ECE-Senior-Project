@@ -1,6 +1,5 @@
 # echo-server.py
 import sys
-
 sys.path.append('/usr/lib/python3/dist-packages')
 import threading
 from socket import *
@@ -13,7 +12,7 @@ import imutils
 import io
 # PI EXCLUSIVE
 import serial
-from gpiozero import Device, PWMLED
+from gpiozero import PWMLED
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
@@ -170,7 +169,7 @@ def handle_video():
 BUFF_SIZE = 65536
 
 HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
-# Pi server = 172.20.10.3
+# Pi server = 172.20.10.3 / 10.42.0.1
 
 # TCP SOCKET
 commands_port = 2100  # Port to listen on (non-privileged ports are > 1023)

@@ -1,14 +1,6 @@
-a, b, c = "101"
+from gpiozero import PWMLED
 
-apples = 2
+led = PWMLED("BOARD32")
 
-def t():
-    a = "2"
-    global apples
-    apples = 4
-
-t()
-a = int(apples)
-
-
-print(a)
+while True:
+    led.value = 1
