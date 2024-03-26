@@ -12,7 +12,7 @@ import imutils
 import io
 # PI EXCLUSIVE
 import serial
-from gpiozero import PWMLED
+from gpiozero import Device, PWMLED
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
@@ -117,10 +117,10 @@ def execute_commands(bits):
     send_to_uart(bits[4:])
 
 
-def handle_commands():
+def handle_tcp():
     while True:
         try:
-            client_socket, tcp_address = commands_socket.accept()
+            client_socket, tcp_address = tcp_socket.accept()
             print(f"Control center connected at {tcp_address}.")
             client_socket.sendall((''.join("Connection established.")).encode('utf-8'))
             while True:
@@ -149,15 +149,15 @@ def handle_commands():
             sys.exit(0)
 
 
-def handle_video():
+def handle_udp(client_socket):
     picam2 = Picamera2()
-    # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
-    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1640, 1232)}))
+    picam2.configure(picam2.create_preview_configuration(
+        main={"format": 'XRGB8888', "size": (1640, 1232)}))  # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
     picam2.start()
 
     while True:
-        client_sock, udp_address = video_socket.accept()
-        print(f"Video feed connected at {udp_address}.")
+        client_sock, udp_address = udp_socket.accept()
+        print(f"FEED center connected at {udp_address}.")
         while True:
             im = picam2.capture_array()
             encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -168,32 +168,32 @@ def handle_video():
 
 BUFF_SIZE = 65536
 
-HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
-# Pi server = 172.20.10.3 / 10.42.0.1
+HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
+# Pi server = 172.20.10.3
 
 # TCP SOCKET
-commands_port = 2100  # Port to listen on (non-privileged ports are > 1023)
-commands_socket = socket(AF_INET, SOCK_STREAM)
-commands_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-commands_socket.bind((HOST, commands_port))
-commands_socket.listen(1)
+TCP_PORT = 2100  # Port to listen on (non-privileged ports are > 1023)
+tcp_socket = socket(AF_INET, SOCK_STREAM)
+tcp_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+tcp_socket.bind((HOST, TCP_PORT))
+tcp_socket.listen(1)
 
 # UDP SOCKET
-video_port = 2101  # Port to listen on (non-privileged ports are > 1023)
-video_socket = socket(AF_INET, SOCK_STREAM)
-video_socket.setsockopt(SOL_SOCKET, SO_RCVBUF, BUFF_SIZE)
-video_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-video_socket.bind((HOST, video_port))
-video_socket.listen(1)
+UDP_PORT = 2101  # Port to listen on (non-privileged ports are > 1023)
+udp_socket = socket(AF_INET, SOCK_STREAM)
+udp_socket.setsockopt(SOL_SOCKET, SO_RCVBUF, BUFF_SIZE)
+udp_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+udp_socket.bind((HOST, UDP_PORT))
+udp_socket.listen(1)
 
-commands_thread = threading.Thread(target=handle_commands, args=())
-commands_thread.start()
+tcp_thread = threading.Thread(target=handle_tcp, args=())
+tcp_thread.start()
 
-video_thread = threading.Thread(target=handle_video, args=())
-video_thread.start()
+udp_thread = threading.Thread(target=handle_udp, args=(udp_socket,))
+udp_thread.start()
 
 print("Server online...")
 
-commands_thread.join()
-video_thread.join()
+tcp_thread.join()
+udp_thread.join()
 
