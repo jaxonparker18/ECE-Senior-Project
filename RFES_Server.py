@@ -171,14 +171,14 @@ BUFF_SIZE = 65536
 HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3 / 10.42.0.1
 
-# TCP SOCKET
+# COMMANDS SOCKET
 commands_port = 2100  # Port to listen on (non-privileged ports are > 1023)
 commands_socket = socket(AF_INET, SOCK_STREAM)
 commands_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 commands_socket.bind((HOST, commands_port))
 commands_socket.listen(1)
 
-# UDP SOCKET
+# VIDEO SOCKET
 video_port = 2101  # Port to listen on (non-privileged ports are > 1023)
 video_socket = socket(AF_INET, SOCK_STREAM)
 video_socket.setsockopt(SOL_SOCKET, SO_RCVBUF, BUFF_SIZE)
