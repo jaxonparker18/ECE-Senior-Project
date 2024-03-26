@@ -1,13 +1,6 @@
-from gpiozero import Servo
-import numpy as np
-from time import sleep
+from gpiozero import PWMLED
 
-servo = Servo("BOARD32")
+led = PWMLED("BOARD32")
 
 while True:
-    servo.min()
-    sleep(1)
-    servo.mid()
-    sleep(1)
-    servo.max()
-    sleep(1)
+    led.value = 1
