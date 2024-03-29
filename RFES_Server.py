@@ -69,11 +69,11 @@ def set_motor(left, right):
         right_motorA.value = 0
         right_motorB.value = 0
     elif right > 0:
-        right_motorA.value = right
-        right_motorB.value = 0
-    else:
         right_motorA.value = 0
-        right_motorB.value = abs(right)
+        right_motorB.value = right
+    else:
+        right_motorA.value = abs(right)
+        right_motorB.value = 0
 
 
 def send_to_uart(bits):
@@ -104,6 +104,7 @@ def execute_commands(bits):
         set_motor(-0.75, -0.5)
     elif w:
         set_motor(0.75, 0.75)
+        print("forward")
     elif s:
         set_motor(-0.75, -0.75)
     elif a:
@@ -162,13 +163,12 @@ def handle_video():
             im = picam2.capture_array()
             encoded, buffer = cv2.imencode('.jpg', im, [cv2.IMWRITE_JPEG_QUALITY, 70])
             message = base64.b64encode(buffer) + b'\0'
-            print(len(message))
             client_sock.sendto(message, udp_address)
 
 
 BUFF_SIZE = 65536
 
-HOST = "172.20.10.3"  # Standard loopback interface address (localhost)
+HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3 / 10.42.0.1
 
 # COMMANDS SOCKET
