@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import base64
 
-HOST = "172.20.10.3"  # The server's hostname or IP address
+HOST = "10.42.0.1"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
@@ -50,7 +50,6 @@ class VideoThreadPiCam(QThread):
                 buffer += packet
                 while b'\0' in buffer:
                     message, buffer = buffer.split(b'\0', 1)
-                    print(len(message))
                     data = base64.b64decode(message)
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
