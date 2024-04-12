@@ -4,7 +4,7 @@ import torch
 from matplotlib import pyplot as plt
 import numpy as np
 
-model = torch.hub.load('ultralytics/yolov5', 'yolov5n')
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
 
 # image = 'https://ultralytics.com/images/zidane.jpg'
 # results = model(image)

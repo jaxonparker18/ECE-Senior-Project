@@ -1,5 +1,6 @@
 # echo-server.py
 import sys
+
 sys.path.append('/usr/lib/python3/dist-packages')
 import threading
 from socket import *
@@ -18,7 +19,7 @@ from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
 
 # UART
-serial_port = '/dev/ttyAMA0'
+serial_port = '/dev/ttyUSB0'  # debug port -> '/dev/ttyAMA10' | busted -> '/dev/ttyAMA0'
 baud_rate = 115200
 ser = serial.Serial(serial_port, baud_rate)
 
@@ -80,6 +81,7 @@ def send_to_uart(bits):
     for i in range(len(bits)):
         uart_command = str(bits[i]).encode('utf-8')
         ser.write(uart_command)
+    print("sent to UART: " + bits)
 
 
 def execute_commands(bits):
