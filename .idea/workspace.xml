@@ -3,6 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="8a2ae673-1932-42a7-9693-2fa2c70889c6" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/RFES_Control_Center.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Control_Center.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/RFES_Server.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolov5/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/yolov5/requirements.txt" afterDir="false" />
     </list>

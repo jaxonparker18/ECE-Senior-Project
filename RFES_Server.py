@@ -33,6 +33,10 @@ right_motor = 1
 
 
 def clean_up():
+    """
+    Closes any GPIO pins.
+    """
+
     global left_motorA
     global left_motorB
     global right_motorA
@@ -46,11 +50,22 @@ def clean_up():
 
 
 def get_most_recent(data_bytes):
+    """
+    Gets the most recent command from data bytes.
+    :param data_bytes: Bytes of data to be filtered
+    :return: most recent bytes of data, 9 characters long
+    """
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
 
 
 def set_motor(left, right):
+    """
+    Sets the left and right motor.
+    :param left: value of left motor (0 - 1), where positive is forward and negative is backward
+    :param right: value of right motor (0 - 1), where positive is forward and negative is backward
+    """
+
     global left_motorA
     global left_motorB
     global right_motorA
@@ -78,13 +93,23 @@ def set_motor(left, right):
 
 
 def send_to_uart(bits):
+    """
+    Send bits to UART.
+    :param bits: bits to be sent
+    """
+
     for i in range(len(bits)):
         uart_command = str(bits[i]).encode('utf-8')
         ser.write(uart_command)
-    print("sent to UART: " + bits)
+    # print("sent to UART: " + bits)
 
 
 def execute_commands(bits):
+    """
+    Execute the commands based on bits, where bits is [w, a, s, d, space, up, down, left, right]
+    :param bits: 9 characters long
+    """
+
     print(bits)
     if len(bits) != 9:
         return
@@ -121,6 +146,10 @@ def execute_commands(bits):
 
 
 def handle_commands():
+    """
+    Establishes handshake with TCP Client and listens to any commands sent from the client.
+    """
+
     while True:
         try:
             client_socket, tcp_address = commands_socket.accept()
@@ -153,6 +182,10 @@ def handle_commands():
 
 
 def handle_video():
+    """
+    Starts the PiCamera and sends video feed from the camera to TCP client.
+    """
+
     picam2 = Picamera2()
     # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
     picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1640, 1232)}))

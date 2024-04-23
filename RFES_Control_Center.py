@@ -1,7 +1,6 @@
 # echo-client.py
 import traceback
 from datetime import datetime
-import time
 import sys
 from socket import *
 import multiprocessing
@@ -23,15 +22,25 @@ HOST = "10.42.0.1"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
-client = 0
-server = 1
+# constants
+CLIENT = 0
+SERVER = 1
 
 
 class VideoThreadPiCam(QThread):
-
+    """
+    Thread class to run the camera on a different thread.
+    """
     change_pixmap_signal = pyqtSignal(np.ndarray)
 
     def __init__(self, parent, status, host, port):
+        """
+        Constructs the thread.
+        :param parent: invoker of thread.
+        :param status: connection status, connected/disconnected
+        :param host: the host of the server, (ip address)
+        :param port: the port number
+        """
         super().__init__(parent)
         self.connected = status
         self.client_socket = None
@@ -40,6 +49,10 @@ class VideoThreadPiCam(QThread):
         self.grab_frame = True
 
     def run(self):
+        """
+        Runs the thread by connecting to the TCP socket receiving frames in bytes and decoding it
+        using cv2, then displaying it onto the window.
+        """
         BUFF_SIZE = 65536
         addr = (self.host, self.port)
         self.client_socket = socket(AF_INET, SOCK_STREAM)
@@ -59,23 +72,45 @@ class VideoThreadPiCam(QThread):
                 pass
                 # print(e)
 
+
 class WorkerThread(QThread):
+    """
+    Thread that updates the Log window with information.
+    """
+
     update_signal = pyqtSignal(str)
 
     def __init__(self, parent, side, message):
+        """
+        Constructs the thread to display message on Log window.
+        :param parent: invoker of thread
+        :param side: the side of which the message is sent, client or server
+        :param message: message to write to Log window
+        """
+
         super().__init__(parent)
         self.side = side
         self.message = message
 
     def run(self):
+        """
+        Emits the signal by sending the message
+        """
+
         self.update_signal.emit(self.side, self.message)
 
 
 class MainWindow(QWidget):
+    """
+    The main window that is displayed upon code execution.
+    """
 
     def __init__(self):
-        super(MainWindow, self).__init__()
+        """
+        Constructs the window that is displayed.
+        """
 
+        super(MainWindow, self).__init__()
         self.logger = None
         self.status_label = None
         # self.setStyleSheet("background-color: #202124;")    # for dark mode
@@ -93,6 +128,7 @@ class MainWindow(QWidget):
         self.feed = None
         self.feed_thread = None
         self.coms_thread = None
+
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
 
@@ -106,15 +142,18 @@ class MainWindow(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
+        # Top panel
         self.top_widget = QWidget()
         self.top_panel_layout = QHBoxLayout()
         self.top_widget.setLayout(self.top_panel_layout)
 
+        # Top panel, left side
         self.TL_widget = QWidget()
         self.TL_layout = QHBoxLayout()
         self.TL_layout.setAlignment(Qt.AlignLeft)
         self.TL_widget.setLayout(self.TL_layout)
 
+        # Top panel, right side
         self.TR_widget = QWidget()
         self.TR_layout = QVBoxLayout()
         self.TR_layout.setAlignment(Qt.AlignRight)
@@ -125,6 +164,7 @@ class MainWindow(QWidget):
 
         self.layout.addWidget(self.top_widget)
 
+        # Bottom panel
         self.bot_widget = QWidget()
         self.bot_layout = QHBoxLayout()
         self.bot_widget.setLayout(self.bot_layout)
@@ -133,14 +173,19 @@ class MainWindow(QWidget):
 
         self.status = "DISCONNECTED"
 
+        # initialize all components
         self.create_label_panel()
         self.create_entry_panel()
         self.show_status()
-        self.display_web()
+        self.display_disconnected()
         self.display_logs()
         self.create_connect_disconnect_panel()
 
     def send_commands(self):
+        """
+        Sends the commands inputted by user to the TCP server.
+        """
+
         try:
             self.socket.sendall((''.join(self.keys)).encode('utf-8'))
 
@@ -148,21 +193,29 @@ class MainWindow(QWidget):
             self.status = "DISCONNECTED"
 
     def connect_to_server(self):
+        """
+        Connects to the server and updates the connection status, logs it
+        :return:
+        """
+
         self.c_d_button.clearFocus()
         if self.status == "DISCONNECTED":
-            self.log(client, "Connecting to server...")
+            self.log(CLIENT, "Connecting to server...")
             self.socket = socket(AF_INET, SOCK_STREAM)
             try:
                 self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
-                self.log(server, self.socket.recv(1024).decode('utf-8'))
+                self.log(SERVER, self.socket.recv(1024).decode('utf-8'))
             except:
-                self.log(client, "Connection with RFES cannot be established. Try again.")
+                self.log(CLIENT, "Connection with RFES cannot be established. Try again.")
                 return
+
             self.status = "CONNECTED"
             self.update_status()
 
+            # Creates a new thread for the camera
             self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
                 self.port_entry.text()) + 1)
+
             # connect its signal to the update_image slot
             self.feed_thread.change_pixmap_signal.connect(self.update_image)
             # start the thread
@@ -172,11 +225,15 @@ class MainWindow(QWidget):
 
         else:
             self.status = "DISCONNECTED"
-            self.log(client, "Connection closed.")
+            self.log(CLIENT, "Connection closed.")
             self.update_status()
             self.socket.close()
 
-    def display_web(self):
+    def display_disconnected(self):
+        """
+        Displays the disconnected icon when currently disconnected.
+        """
+
         self.feed = QLabel()
         self.feed.setFixedSize(1500, 840)
         self.feed.setPixmap(QPixmap("res/not_connected.png"))
@@ -186,14 +243,20 @@ class MainWindow(QWidget):
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
-        """Updates the image_label with a new opencv image"""
+        """
+        Updates the image_label with a new opencv image.
+        """
+
         display_img = cv_img
         qt_img = self.convert_cv_qt(display_img)
         self.feed.setPixmap(qt_img)
         self.feed_thread.grab_frame = True
 
     def convert_cv_qt(self, cv_img):
-        """Convert from an opencv image to QPixmap"""
+        """
+        Convert from an opencv image to QPixmap.
+        """
+
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
@@ -202,6 +265,10 @@ class MainWindow(QWidget):
         return QPixmap.fromImage(p)
 
     def display_logs(self):
+        """
+        Display logs on the right side of the screen, used to debug program.
+        """
+
         logs_w = QWidget()
         logs_l = QVBoxLayout()
         logs_w.setLayout(logs_l)
@@ -223,6 +290,12 @@ class MainWindow(QWidget):
         self.bot_layout.addWidget(logs_w)
 
     def log(self, side, message):
+        """
+        Logs information onto the Log window along with the time.
+        :param side: message source, client/server
+        :param message: the message to be logged
+        """
+
         time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         if side == 0:
             self.logger.setText(str(self.logger.toPlainText()) + "\n" + time + " - CLIENT: " + message)
@@ -233,70 +306,84 @@ class MainWindow(QWidget):
         )
 
     def keyPressEvent(self, event):
+        """
+        Listens for any key pressed events.
+        :param event: the type of event that occurs
+        """
+
         key = event.key()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '1'
-                self.log(client, "Moving forward.")
+                self.log(CLIENT, "Moving forward.")
             if key == Qt.Key_A:
                 self.keys[1] = '1'
-                self.log(client, "Moving left.")
+                self.log(CLIENT, "Moving left.")
             if key == Qt.Key_S:
                 self.keys[2] = '1'
-                self.log(client, "Moving back.")
+                self.log(CLIENT, "Moving back.")
             if key == Qt.Key_D:
                 self.keys[3] = '1'
-                self.log(client, "Moving right.")
+                self.log(CLIENT, "Moving right.")
             if key == Qt.Key_Space:
                 self.keys[4] = '1'
-                self.log(client, "Firing.")
+                self.log(CLIENT, "Firing.")
             if key == Qt.Key_Up:
                 self.keys[5] = '1'
-                self.log(client, "Panning up.")
+                self.log(CLIENT, "Panning up.")
             if key == Qt.Key_Down:
                 self.keys[6] = '1'
-                self.log(client, "Panning down.")
+                self.log(CLIENT, "Panning down.")
             if key == Qt.Key_Left:
                 self.keys[7] = '1'
-                self.log(client, "Panning left.")
+                self.log(CLIENT, "Panning left.")
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
-                self.log(client, "Panning right.")
+                self.log(CLIENT, "Panning right.")
             self.send_commands()
 
     def keyReleaseEvent(self, event):
+        """
+        Listens for any key released events.
+        :param event: type of event that occurs
+        """
+
         key = event.key()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '0'
-                self.log(client, "Stop moving forward.")
+                self.log(CLIENT, "Stop moving forward.")
             if key == Qt.Key_A:
                 self.keys[1] = '0'
-                self.log(client, "Stop moving left.")
+                self.log(CLIENT, "Stop moving left.")
             if key == Qt.Key_S:
                 self.keys[2] = '0'
-                self.log(client, "Stop moving back.")
+                self.log(CLIENT, "Stop moving back.")
             if key == Qt.Key_D:
                 self.keys[3] = '0'
-                self.log(client, "Stop moving right.")
+                self.log(CLIENT, "Stop moving right.")
             if key == Qt.Key_Space:
                 self.keys[4] = '0'
-                self.log(client, "Stop firing.")
+                self.log(CLIENT, "Stop firing.")
             if key == Qt.Key_Up:
                 self.keys[5] = '0'
-                self.log(client, "Stop panning up.")
+                self.log(CLIENT, "Stop panning up.")
             if key == Qt.Key_Down:
                 self.keys[6] = '0'
-                self.log(client, "Stop panning down.")
+                self.log(CLIENT, "Stop panning down.")
             if key == Qt.Key_Left:
                 self.keys[7] = '0'
-                self.log(client, "Stop panning left.")
+                self.log(CLIENT, "Stop panning left.")
             if key == Qt.Key_Right:
                 self.keys[8] = '0'
-                self.log(client, "Stop panning right.")
+                self.log(CLIENT, "Stop panning right.")
             self.send_commands()
 
     def create_label_panel(self):
+        """
+        Labels of the IP Address and the Port.
+        """
+
         TL_L_widget = QWidget()
         TL_L_layout = QVBoxLayout()
         TL_L_widget.setLayout(TL_L_layout)
@@ -313,8 +400,11 @@ class MainWindow(QWidget):
 
         self.TL_layout.addWidget(TL_L_widget)
 
-
     def create_entry_panel(self):
+        """
+        The panel for the text entries.
+        :return:
+        """
         TL_R_widget = QWidget()
         TL_R_layout = QVBoxLayout()
         TL_R_widget.setLayout(TL_R_layout)
@@ -336,10 +426,13 @@ class MainWindow(QWidget):
         self.TL_layout.addWidget(TL_R_widget)
 
     def create_connect_disconnect_panel(self):
+        """
+        The panel for the connect/disconnect button.
+        """
+
         button_widget = QWidget()
         button_layout = QVBoxLayout()
         button_widget.setLayout(button_layout)
-        # button_layout.setAlignment(Qt.AlignLeft)
 
         left_spacer = QSpacerItem(0, 1)
         button_layout.addItem(left_spacer)
@@ -356,6 +449,10 @@ class MainWindow(QWidget):
         self.TL_layout.addWidget(button_widget)
 
     def show_status(self):
+        """
+        Displays the connection status.
+        """
+
         self.status_label = QLabel()
         font = QFont("sans serif", 20)
         font.setBold(True)
@@ -367,6 +464,10 @@ class MainWindow(QWidget):
         self.TR_layout.addWidget(self.status_label)
 
     def update_status(self):
+        """
+        Updates the status of the connection.
+        """
+
         if self.status == "DISCONNECTED":
             self.ip_entry.setReadOnly(False)
             self.port_entry.setReadOnly(False)
@@ -395,6 +496,9 @@ class MainWindow(QWidget):
 
 
 def main():
+    """
+    Main method.
+    """
 
     myappid = 'rfes-control-center'  # arbitrary string
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
