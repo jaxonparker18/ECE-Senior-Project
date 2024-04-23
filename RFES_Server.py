@@ -19,7 +19,7 @@ from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
 
 # UART
-serial_port = '/dev/ttyUSB0'  # debug port -> '/dev/ttyAMA10' | busted -> '/dev/ttyAMA0'
+serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
 baud_rate = 115200
 ser = serial.Serial(serial_port, baud_rate)
 
