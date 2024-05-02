@@ -4,19 +4,19 @@ from datetime import datetime
 import sys
 from socket import *
 import multiprocessing
-from threading import Thread
+import threading
 
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import *
-from PyQt5.QtWebEngineWidgets import *
 import ctypes
 
 import cv2
 import numpy as np
 import base64
 
+#GLOBAL VARIABLES
 
 HOST = "10.42.0.1"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
@@ -25,6 +25,9 @@ PORT = 2100  # The port used by the server, must be >= 1024
 # constants
 CLIENT = 0
 SERVER = 1
+
+# thread stop flags
+video_stop_flag = threading.Event()
 
 
 class VideoThreadPiCam(QThread):
@@ -58,7 +61,8 @@ class VideoThreadPiCam(QThread):
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect(addr)
         buffer = b''
-        while True:
+
+        while not video_stop_flag.is_set():
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
                 buffer += packet
@@ -71,6 +75,7 @@ class VideoThreadPiCam(QThread):
             except Exception as e:
                 pass
                 # print(e)
+        self.client_socket.close()
 
 
 class WorkerThread(QThread):
@@ -181,6 +186,9 @@ class MainWindow(QWidget):
         self.display_logs()
         self.create_connect_disconnect_panel()
 
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocus()
+
     def send_commands(self):
         """
         Sends the commands inputted by user to the TCP server.
@@ -195,7 +203,6 @@ class MainWindow(QWidget):
     def connect_to_server(self):
         """
         Connects to the server and updates the connection status, logs it
-        :return:
         """
 
         self.c_d_button.clearFocus()
@@ -213,6 +220,7 @@ class MainWindow(QWidget):
             self.update_status()
 
             # Creates a new thread for the camera
+            video_stop_flag.clear()     # resets flag
             self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
                 self.port_entry.text()) + 1)
 
@@ -228,6 +236,10 @@ class MainWindow(QWidget):
             self.log(CLIENT, "Connection closed.")
             self.update_status()
             self.socket.close()
+
+            # disables video thread
+            video_stop_flag.set()
+            # self.feed_thread.join()
 
     def display_disconnected(self):
         """
@@ -246,11 +258,14 @@ class MainWindow(QWidget):
         """
         Updates the image_label with a new opencv image.
         """
-
-        display_img = cv_img
-        qt_img = self.convert_cv_qt(display_img)
-        self.feed.setPixmap(qt_img)
-        self.feed_thread.grab_frame = True
+        if self.status == "CONNECTED":
+            display_img = cv_img
+            qt_img = self.convert_cv_qt(display_img)
+            self.feed.setPixmap(qt_img)
+            self.feed_thread.grab_frame = True
+        else:
+            self.feed.setPixmap(QPixmap("res/not_connected.png"))
+            self.update()
 
     def convert_cv_qt(self, cv_img):
         """
@@ -311,6 +326,9 @@ class MainWindow(QWidget):
         :param event: the type of event that occurs
         """
 
+        if self.status == "DISCONNECTED":
+            return
+
         key = event.key()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
@@ -348,6 +366,9 @@ class MainWindow(QWidget):
         :param event: type of event that occurs
         """
 
+        if self.status == "DISCONNECTED":
+            return
+
         key = event.key()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
@@ -384,6 +405,7 @@ class MainWindow(QWidget):
         Labels of the IP Address and the Port.
         """
 
+        # Inside top left widget, left side
         TL_L_widget = QWidget()
         TL_L_layout = QVBoxLayout()
         TL_L_widget.setLayout(TL_L_layout)
@@ -403,8 +425,9 @@ class MainWindow(QWidget):
     def create_entry_panel(self):
         """
         The panel for the text entries.
-        :return:
         """
+
+        # Inside top left widget, right side
         TL_R_widget = QWidget()
         TL_R_layout = QVBoxLayout()
         TL_R_widget.setLayout(TL_R_layout)
@@ -441,6 +464,10 @@ class MainWindow(QWidget):
         self.c_d_button.setFont(QFont("sans serif", 12))
         self.c_d_button.setFixedSize(200, 40)
         self.c_d_button.clicked.connect(self.connect_to_server)
+
+        # click only focus
+        self.c_d_button.setFocusPolicy(Qt.ClickFocus)
+
         button_layout.addWidget(self.c_d_button)
 
         right_spacer = QSpacerItem(800, 1)
@@ -470,21 +497,29 @@ class MainWindow(QWidget):
 
         if self.status == "DISCONNECTED":
             self.ip_entry.setReadOnly(False)
+            self.ip_entry.setDisabled(False)
+
             self.port_entry.setReadOnly(False)
+            self.port_entry.setDisabled(False)
             self.c_d_button.setText("Connect")
             self.status_label.setText(self.status)
             self.status_label.setStyleSheet("color:red")
 
+            # kill video thread
+            # video_stop_flag.set()
+            # self.feed_thread.join()
+
             # GUI update
-            # self.bot_layout.removeWidget(self.browser)
-            # self.browser.setParent(None)
-            # self.bot_layout.insertWidget(0, self.feed)
             self.feed.setPixmap(QPixmap("res/not_connected.png"))
             self.update()
 
         else:
             self.ip_entry.setReadOnly(True)
+            self.ip_entry.setDisabled(True)
+
             self.port_entry.setReadOnly(True)
+            self.port_entry.setDisabled(True)
+
             self.c_d_button.setText("Disconnect")
             self.status_label.setText(self.status)
             self.status_label.setStyleSheet("color:green")
