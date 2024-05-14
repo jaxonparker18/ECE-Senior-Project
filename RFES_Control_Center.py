@@ -28,6 +28,7 @@ SERVER = 1
 
 # thread stop flags
 video_stop_flag = threading.Event()
+recv_stop_flag = threading.Event()
 
 
 class VideoThreadPiCam(QThread):
@@ -78,12 +79,12 @@ class VideoThreadPiCam(QThread):
         self.client_socket.close()
 
 
-class WorkerThread(QThread):
+class LoggerThread(QThread):
     """
     Thread that updates the Log window with information.
     """
 
-    update_signal = pyqtSignal(str)
+    update_signal = pyqtSignal(int, str)
 
     def __init__(self, parent, side, message):
         """
@@ -133,6 +134,7 @@ class MainWindow(QWidget):
         self.feed = None
         self.feed_thread = None
         self.coms_thread = None
+        self.recv_thread = None
 
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
@@ -200,6 +202,21 @@ class MainWindow(QWidget):
         except:
             self.status = "DISCONNECTED"
 
+    def recv_data(self):
+        """
+        Receives data from TCP server.
+        """
+
+        while True:
+            try:
+                data = self.socket.recv(1024).decode('utf-8')
+                recv_thread = LoggerThread(self, SERVER, data)
+                recv_thread.update_signal.connect(self.log)
+                recv_thread.start()
+            except:
+                print("server closed")
+                break
+
     def connect_to_server(self):
         """
         Connects to the server and updates the connection status, logs it
@@ -212,7 +229,10 @@ class MainWindow(QWidget):
             try:
                 self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
                 self.log(SERVER, self.socket.recv(1024).decode('utf-8'))
+                self.recv_thread = threading.Thread(target=self.recv_data, args=())
+                self.recv_thread.start()
             except:
+                print("ERROR")
                 self.log(CLIENT, "Connection with RFES cannot be established. Try again.")
                 return
 
@@ -239,7 +259,6 @@ class MainWindow(QWidget):
 
             # disables video thread
             video_stop_flag.set()
-            # self.feed_thread.join()
 
     def display_disconnected(self):
         """
@@ -310,8 +329,8 @@ class MainWindow(QWidget):
         :param side: message source, client/server
         :param message: the message to be logged
         """
-
-        time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        print(side, message)
+        time = datetime.now().strftime("%H:%M:%S")
         if side == 0:
             self.logger.setText(str(self.logger.toPlainText()) + "\n" + time + " - CLIENT: " + message)
         else:
@@ -333,31 +352,22 @@ class MainWindow(QWidget):
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '1'
-                self.log(CLIENT, "Moving forward.")
             if key == Qt.Key_A:
                 self.keys[1] = '1'
-                self.log(CLIENT, "Moving left.")
             if key == Qt.Key_S:
                 self.keys[2] = '1'
-                self.log(CLIENT, "Moving back.")
             if key == Qt.Key_D:
                 self.keys[3] = '1'
-                self.log(CLIENT, "Moving right.")
             if key == Qt.Key_Space:
                 self.keys[4] = '1'
-                self.log(CLIENT, "Firing.")
             if key == Qt.Key_Up:
                 self.keys[5] = '1'
-                self.log(CLIENT, "Panning up.")
             if key == Qt.Key_Down:
                 self.keys[6] = '1'
-                self.log(CLIENT, "Panning down.")
             if key == Qt.Key_Left:
                 self.keys[7] = '1'
-                self.log(CLIENT, "Panning left.")
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
-                self.log(CLIENT, "Panning right.")
             self.send_commands()
 
     def keyReleaseEvent(self, event):
@@ -373,31 +383,22 @@ class MainWindow(QWidget):
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '0'
-                self.log(CLIENT, "Stop moving forward.")
             if key == Qt.Key_A:
                 self.keys[1] = '0'
-                self.log(CLIENT, "Stop moving left.")
             if key == Qt.Key_S:
                 self.keys[2] = '0'
-                self.log(CLIENT, "Stop moving back.")
             if key == Qt.Key_D:
                 self.keys[3] = '0'
-                self.log(CLIENT, "Stop moving right.")
             if key == Qt.Key_Space:
                 self.keys[4] = '0'
-                self.log(CLIENT, "Stop firing.")
             if key == Qt.Key_Up:
                 self.keys[5] = '0'
-                self.log(CLIENT, "Stop panning up.")
             if key == Qt.Key_Down:
                 self.keys[6] = '0'
-                self.log(CLIENT, "Stop panning down.")
             if key == Qt.Key_Left:
                 self.keys[7] = '0'
-                self.log(CLIENT, "Stop panning left.")
             if key == Qt.Key_Right:
                 self.keys[8] = '0'
-                self.log(CLIENT, "Stop panning right.")
             self.send_commands()
 
     def create_label_panel(self):

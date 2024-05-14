@@ -13,10 +13,65 @@ import imutils
 import io
 # PI EXCLUSIVE
 import serial
-from gpiozero import Motor, Servo
+from gpiozero import Motor, Servo, PWMLED
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
+
+
+class Ser():
+    def __init__(self):
+        self.value = 0
+
+
+class UpdateServoThread(threading.Thread):
+    def __init__(self, servo, direction):
+        super().__init__()
+        self.servo = servo
+        self.direction = direction
+        self._stop_event = threading.Event()
+        self.delay = DELAY
+        self.new_val = 0
+
+    def run(self):
+        self.servo.on()
+        global curr_x
+        self.new_val = curr_x
+        while not self._stop_event.is_set():
+            if self.delay < DELAY:
+                self.delay += 1
+                continue
+            if self.direction == LEFT:
+                self.new_val += INCS
+            elif self.direction == RIGHT:
+                self.new_val -= INCS
+            elif self.direction == UP:
+                self.new_val += INCS
+            elif self.direction == DOWN:
+                self.new_val -= INCS
+            if self.new_val > 0.3:
+                self.new_val = 0.3
+            if self.new_val < 0.04:
+                self.new_val = 0.04
+            self.servo.value = self.new_val
+            curr_x = self.new_val
+            self.delay = 0
+            print("servo", curr_x)
+
+    def stop(self):
+        self.servo.off()
+        self._stop_event.set()
+
+
+# CONSTS
+INCS = 0.01
+
+DELAY = 1000000
+
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
 
 # UART
 serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
@@ -28,8 +83,12 @@ left_motor = Motor("BOARD11", "BOARD13")
 right_motor = Motor("BOARD18", "BOARD16")
 
 # SERVOS
-x_servo = Servo("BOARD36")
-x_servo.mid()
+x_servo = PWMLED("BOARD40")
+x_servo_thread = UpdateServoThread(x_servo, LEFT)
+curr_x = 0
+
+# SERVER
+client_socket = None
 
 
 def clean_up():
@@ -49,11 +108,16 @@ def get_most_recent(data_bytes):
     return string_data[len(string_data) - 9: len(string_data)]
 
 
+def send_to_client(data):
+    print("sent")
+    client_socket.sendall((''.join(data).encode('utf-8')))
+
+
 def set_motor(left_speed, right_speed):
     """
     Sets the left and right motor.
-    :param left_speed: value of left motor (0 - 1), where positive is forward and negative is backward
-    :param right_speed: value of right motor (0 - 1), where positive is forward and negative is backward
+    :param left: value of left motor (0 - 1), where positive is forward and negative is backward
+    :param right: value of right motor (0 - 1), where positive is forward and negative is backward
     """
 
     global left_motor
@@ -91,63 +155,87 @@ def execute_commands(bits):
     Execute the commands based on bits, where bits is [w, a, s, d, space, up, down, left, right]
     :param bits: 9 characters long
     """
+    try:
+        print(bits)
+        if len(bits) != 9:
+            return
 
-    print(bits)
-    if len(bits) != 9:
-        return
+        w, a, s, d, space, up, down, left, right = bits
+        w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
+            left), int(right)
 
-    w, a, s, d, space, up, down, left, right = bits
-    w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
-        left), int(right)
+        # MOVEMENT
+        if w and a:
+            set_motor(0.10, 0.75)
+            send_to_client("W and A executed.")
+        elif w and d:
+            set_motor(0.75, 0.10)
+            send_to_client("W and D executed.")
+        elif w and s:
+            set_motor(0, 0)
+            send_to_client("W and S executed.")
+        elif s and a:
+            set_motor(-0.25, -0.75)
+            send_to_client("S and A executed.")
+        elif s and d:
+            set_motor(-0.75, -0.25)
+            send_to_client("S and D executed.")
+        elif w:
+            set_motor(0.75, 0.75)
+            send_to_client("W executed.")
+        elif s:
+            set_motor(-0.75, -0.75)
+            send_to_client("S executed.")
+        elif a:
+            set_motor(-0.75, 0.75)
+            send_to_client("A executed.")
+        elif d:
+            set_motor(0.75, -0.75)
+            send_to_client("D executed.")
+        else:
+            set_motor(0, 0)
+            send_to_client("RFES on standby.")
 
-    # MOVEMENT
-    if w and a:
-        set_motor(0.10, 0.75)
-    elif w and d:
-        set_motor(0.75, 0.10)
-    elif w and s:
-        set_motor(0, 0)
-    elif s and a:
-        set_motor(-0.25, -0.75)
-    elif s and d:
-        set_motor(-0.75, -0.25)
-    elif w:
-        set_motor(0.75, 0.75)
-    elif s:
-        set_motor(-0.75, -0.75)
-    elif a:
-        set_motor(-0.75, 0.75)
-    elif d:
-        set_motor(0.75, -0.75)
-    else:
-        set_motor(0, 0)
+        # FIRING MECHANISM
+        # send_to_uart(bits[4:])
+        global x_servo_thread
+        if left:
+            if not x_servo_thread.is_alive():
+                x_servo_thread = UpdateServoThread(x_servo, LEFT)
+                x_servo_thread.start()
+                return
 
-    # FIRING MECHANISM
-    # send_to_uart(bits[4:])
-    if left:
-        x_servo.max()
-        print("turn left")
-        # if (x_servo.value + 0.1 <= 1):
-        #  x_servo.value += 0.1
-        #  print("turning left..." + str(x_servo.value))
-    if right:
-        x_servo.min()
-        print("turn right")
-        # if (x_servo.value - 0.1 >= -1):
-        #    x_servo.value -= 0.1
-        #    print("turning right..." + str(x_servo.value))
+        elif not left:
+            if x_servo_thread.is_alive():
+                x_servo_thread.stop()
+                x_servo_thread.join()
+
+        if right:
+            if not x_servo_thread.is_alive():
+                x_servo_thread = UpdateServoThread(x_servo, RIGHT)
+                x_servo_thread.start()
+                return
+
+        elif not right:
+            if x_servo_thread.is_alive():
+                x_servo_thread.stop()
+                x_servo_thread.join()
+
+    except Exception as e:
+        send_to_client("ERROR OCCURED: " + repr(e))
 
 
 def handle_commands():
     """
     Establishes handshake with TCP Client and listens to any commands sent from the client.
     """
-
+    global client_socket
     while True:
         try:
             client_socket, tcp_address = commands_socket.accept()
             print(f"Command center connected at {tcp_address}.")
-            client_socket.sendall((''.join("Connection established.")).encode('utf-8'))
+            send_to_client("Connection established.")
+            # client_socket.sendall((''.join("Connection established.")).encode('utf-8'))
             while True:
                 try:
                     data = client_socket.recv(9, MSG_WAITALL)
