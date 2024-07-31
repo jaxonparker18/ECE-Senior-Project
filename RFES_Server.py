@@ -285,7 +285,8 @@ def handle_video():
 
 BUFF_SIZE = 65536
 
-HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
+HOST = "192.168.86.30"
+#HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3 / 10.42.0.1
 
 # COMMANDS SOCKET
