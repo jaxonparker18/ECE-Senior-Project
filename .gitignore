@@ -1,3 +1,4 @@
 yolov5/
 *.pt
 1.py
+venv/
