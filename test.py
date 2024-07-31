@@ -35,6 +35,10 @@ led = Servo(17, min_pulse_width=minPW, max_pulse_width=maxPW)
 print(led.max_pulse_width)
 num = 0
 
+serial_port = '/dev/ttyUSB0'
+baud_rate = 115200
+ser = serial.Serial(serial_port, baud_rate)
+x = ""
 while True:
 
     """
