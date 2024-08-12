@@ -1,4 +1,7 @@
 yolov5/
+datasets/
+ultralytics/
 *.pt
 1.py
 venv/
+.idea/

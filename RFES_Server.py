@@ -1,4 +1,5 @@
 # echo-server.py
+# LAST UPDATE: Nathan - 8/11/2024 - 11:33PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -13,14 +14,17 @@ import imutils
 import io
 # PI EXCLUSIVE
 import serial
-from gpiozero import Motor, Servo, PWMLED
+from gpiozero import Motor, Servo, PWMLED, LED
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
+from rpi_hardware_pwm import HardwarePWM
+
 
 class Ser():
     def __init__(self):
         self.value = 0
+
 
 class UpdateServoThread(threading.Thread):
     def __init__(self, servo, direction):
@@ -60,6 +64,7 @@ class UpdateServoThread(threading.Thread):
         self.servo.off()
         self._stop_event.set()
 
+
 # CONSTS
 INCS = 0.01
 
@@ -83,9 +88,19 @@ right_motor = Motor("BOARD18", "BOARD16")
 x_servo = PWMLED("BOARD40")
 x_servo_thread = UpdateServoThread(x_servo, LEFT)
 curr_x = 0
+## MAX PWM IS 2.4MS or 12% DUTY CYCLE
+## MIN PWM IS 0.8MS or  4% DUTY CYCLE
+pwm_y = HardwarePWM(pwm_channel=2, hz=50, chip=2)
+pwm_y.start(10)  # USING 10 INSTEAD OF 12 SO NOT MAX
+current_pwm_y = 8
+
+# PUMP
+pump = LED("BOARD15")
+pump.off()
 
 # SERVER
 client_socket = None
+
 
 def clean_up():
     """
@@ -103,9 +118,11 @@ def get_most_recent(data_bytes):
     string_data = data_bytes.decode('utf-8')
     return string_data[len(string_data) - 9: len(string_data)]
 
+
 def send_to_client(data):
     print("sent")
     client_socket.sendall((''.join(data).encode('utf-8')))
+
 
 def set_motor(left_speed, right_speed):
     """
@@ -113,10 +130,10 @@ def set_motor(left_speed, right_speed):
     :param left: value of left motor (0 - 1), where positive is forward and negative is backward
     :param right: value of right motor (0 - 1), where positive is forward and negative is backward
     """
-    
+
     global left_motor
     global right_motor
-    
+
     if left_speed == 0:
         left_motor.stop()
     elif left_speed > 0:
@@ -157,7 +174,6 @@ def execute_commands(bits):
         w, a, s, d, space, up, down, left, right = bits
         w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
             left), int(right)
-        
         # MOVEMENT
         if w and a:
             set_motor(0.10, 0.75)
@@ -192,6 +208,7 @@ def execute_commands(bits):
 
         # FIRING MECHANISM
         # send_to_uart(bits[4:])
+        """
         global x_servo_thread
         if left:
             if not x_servo_thread.is_alive():
@@ -214,10 +231,31 @@ def execute_commands(bits):
             if x_servo_thread.is_alive():
                 x_servo_thread.stop()
                 x_servo_thread.join()
-                
+        """
+        global current_pwm_y
+        if down:
+            print("Going up")
+            if current_pwm_y <= 10:
+                current_pwm_y += 0.5
+                pwm_y.change_duty_cycle(current_pwm_y)
+
+        elif up:
+            print("Going down")
+            if current_pwm_y >= 6:
+                current_pwm_y -= 0.5
+                pwm_y.change_duty_cycle(current_pwm_y)
+
+        if space:
+            pump.on()
+            send_to_client("Pump on.")
+        else:
+            pump.off()
+            send_to_client("Pump off.")
+
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))
-        
+
+
 def handle_commands():
     """
     Establishes handshake with TCP Client and listens to any commands sent from the client.
@@ -243,7 +281,7 @@ def handle_commands():
                     client_socket.close()
                     clean_up()
                     sys.exit(0)
-                #except:
+                # except:
                 #    print("Commands disconnected from control center: Failed to receive exception")
                 #    clean_up()
                 #    break
@@ -261,7 +299,8 @@ def handle_video():
 
     picam2 = Picamera2()
     # (3280, 2646), (1920, 1080), (1640, 1232), (640, 480)
-    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1640, 1232)}))
+    picam2.configure(picam2.create_preview_configuration(
+        main={"format": 'XRGB8888', "size": (1640, 1232)}))  # "libcamera-hello -t 1 --nopreview" for all resolutions
     picam2.start()
 
     while True:
@@ -285,8 +324,9 @@ def handle_video():
 
 BUFF_SIZE = 65536
 
-HOST = "192.168.86.30"
-#HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
+HOST = "169.254.196.32"
+# HOST = "172.20.10.7"
+# HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
 # Pi server = 172.20.10.3 / 10.42.0.1
 
 # COMMANDS SOCKET

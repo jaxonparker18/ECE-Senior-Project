@@ -1,4 +1,6 @@
 # echo-client.py
+# LAST UPDATE: Nathan - 8/11/2024 - 11:33PM
+import os
 import traceback
 from datetime import datetime
 import sys
@@ -13,12 +15,18 @@ from PyQt5.QtCore import *
 import ctypes
 
 import cv2
+import torch
 import numpy as np
 import base64
+import time
+import pathlib
+
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
 
 #GLOBAL VARIABLES
 
-HOST = "10.42.0.1"  # The server's hostname or IP address
+HOST = "169.254.196.32"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
@@ -62,17 +70,47 @@ class VideoThreadPiCam(QThread):
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect(addr)
         buffer = b''
-
+        # OBJ DETECT
+        # model = torch.hub.load(r'D:\Documents\UoU\Spring24\ECE3992\ECE-Senior-Project\yolov5', 'custom', source='local', path='fire_v5n50e.pt', force_reload=True)
+        # circle attr
+        radius = 3
+        thickness = -1
+        color = (255, 0, 0)
         while not video_stop_flag.is_set():
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
                 buffer += packet
                 while b'\0' in buffer:
+                    # start = time.time()
                     message, buffer = buffer.split(b'\0', 1)
                     data = base64.b64decode(message)
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+
+
+                    # OBJ DETECTION
+                    # frame = cv2.resize(frame, (640, 480)) # (1920, 1080) (640, 480)
+                    # results = model(frame)
+                    # frame = np.squeeze(results.render())
+                    # # x1(pixels), y1(pixels), x2(pixels), y2(pixels), confidence, class
+                    # # print(results.xyxy)
+                    # if len(results.xyxy[0]) > 0:
+                    #     x1 = results.xyxy[0][0][0]
+                    #     y1 = results.xyxy[0][0][1]
+                    #     x2 = results.xyxy[0][0][2]
+                    #     y2 = results.xyxy[0][0][3]
+                    #
+                    #     mid_x = (x1 + x2) / 2
+                    #     mid_y = (y1 + y2) / 2
+                    #
+                    #     center_coordinate = (int(mid_x), int(mid_y))
+                    #     frame = cv2.circle(frame, center_coordinate, radius, color, thickness)
+
                     self.change_pixmap_signal.emit(frame)
+
+                    # FPS CHECK
+                    # stop = time.time()
+                    # print(str(stop-start), "ms")
             except Exception as e:
                 pass
                 # print(e)
@@ -115,7 +153,6 @@ class MainWindow(QWidget):
         """
         Constructs the window that is displayed.
         """
-
         super(MainWindow, self).__init__()
         self.logger = None
         self.status_label = None
@@ -195,7 +232,6 @@ class MainWindow(QWidget):
         """
         Sends the commands inputted by user to the TCP server.
         """
-
         try:
             self.socket.sendall((''.join(self.keys)).encode('utf-8'))
 
@@ -329,7 +365,7 @@ class MainWindow(QWidget):
         :param side: message source, client/server
         :param message: the message to be logged
         """
-        print(side, message)
+        # print(side, message)
         time = datetime.now().strftime("%H:%M:%S")
         if side == 0:
             self.logger.setText(str(self.logger.toPlainText()) + "\n" + time + " - CLIENT: " + message)
