@@ -34,6 +34,8 @@ PORT = 2100  # The port used by the server, must be >= 1024
 CLIENT = 0
 SERVER = 1
 
+IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
+
 # thread stop flags
 video_stop_flag = threading.Event()
 recv_stop_flag = threading.Event()
@@ -174,7 +176,7 @@ class MainWindow(QWidget):
         self.recv_thread = None
 
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
-        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.keys = IDLE
 
         self.display_width = 1500
         self.display_height = 840
@@ -385,6 +387,7 @@ class MainWindow(QWidget):
             return
 
         key = event.key()
+        self.keys = IDLE.copy()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '1'
@@ -406,6 +409,7 @@ class MainWindow(QWidget):
                 self.keys[8] = '1'
             self.send_commands()
 
+
     def keyReleaseEvent(self, event):
         """
         Listens for any key released events.
@@ -416,6 +420,7 @@ class MainWindow(QWidget):
             return
 
         key = event.key()
+        self.keys = IDLE.copy()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
                 self.keys[0] = '0'

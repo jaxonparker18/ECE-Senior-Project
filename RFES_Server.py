@@ -1,5 +1,5 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/11/2024 - 11:33PM
+# LAST UPDATE: Nathan - 8/12/2024 - 12:12PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -21,61 +21,49 @@ from picamera2.outputs import FileOutput
 from rpi_hardware_pwm import HardwarePWM
 
 
-class Ser():
-    def __init__(self):
-        self.value = 0
-
-
 class UpdateServoThread(threading.Thread):
-    def __init__(self, servo, direction):
+    """
+    Controls the movement of the servos to support holding down a key.
+    """
+
+    def __init__(self, servo, pwm_val, pwm_max, pwm_min, direction):
         super().__init__()
         self.servo = servo
         self.direction = direction
-        self._stop_event = threading.Event()
-        self.delay = DELAY
-        self.new_val = 0
+        self.stop_event = threading.Event()
+        self.current_pwm_val = pwm_val
+        self.pwm_max = pwm_max
+        self.pwm_min = pwm_min
+        self.increment = 0.0001
 
     def run(self):
-        self.servo.on()
-        global curr_x
-        self.new_val = curr_x
-        while not self._stop_event.is_set():
-            if self.delay < DELAY:
-                self.delay += 1
-                continue
-            if self.direction == LEFT:
-                self.new_val += INCS
-            elif self.direction == RIGHT:
-                self.new_val -= INCS
-            elif self.direction == UP:
-                self.new_val += INCS
+        global PWM_MIN
+        global PWM_MAX
+        while not self.stop_event.is_set():
+            if self.direction == UP:
+                if self.current_pwm_val >= self.pwm_min:
+                    self.current_pwm_val -= self.increment
             elif self.direction == DOWN:
-                self.new_val -= INCS
-            if self.new_val > 0.3:
-                self.new_val = 0.3
-            if self.new_val < 0.04:
-                self.new_val = 0.04
-            self.servo.value = self.new_val
-            curr_x = self.new_val
-            self.delay = 0
-            print("servo", curr_x)
+                if self.current_pwm_val <= self.pwm_max:
+                    self.current_pwm_val += self.increment
+            self.servo.change_duty_cycle(self.current_pwm_val)
 
     def stop(self):
-        self.servo.off()
-        self._stop_event.set()
+        self.stop_event.set()
 
 
 # CONSTS
-INCS = 0.01
-
-DELAY = 1000000
-
 UP = 0
 DOWN = 1
 LEFT = 2
 RIGHT = 3
+IDLE = 4
 
-# UART
+ON = "1"
+OFF = "0"
+DC = "x"
+
+# UART - DEPRECIATED
 serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
 baud_rate = 115200
 ser = serial.Serial(serial_port, baud_rate)
@@ -85,14 +73,16 @@ left_motor = Motor("BOARD11", "BOARD13")
 right_motor = Motor("BOARD18", "BOARD16")
 
 # SERVOS
-x_servo = PWMLED("BOARD40")
-x_servo_thread = UpdateServoThread(x_servo, LEFT)
-curr_x = 0
 ## MAX PWM IS 2.4MS or 12% DUTY CYCLE
 ## MIN PWM IS 0.8MS or  4% DUTY CYCLE
+PWM_MAX = 10
+PWM_MIN = 6
+PWM_MID = 8
 pwm_y = HardwarePWM(pwm_channel=2, hz=50, chip=2)
-pwm_y.start(10)  # USING 10 INSTEAD OF 12 SO NOT MAX
-current_pwm_y = 8
+current_pwm_y = PWM_MID
+pwm_y.start(current_pwm_y)
+
+move_y_thread = None
 
 # PUMP
 pump = LED("BOARD15")
@@ -100,13 +90,6 @@ pump.off()
 
 # SERVER
 client_socket = None
-
-
-def clean_up():
-    """
-    Closes any GPIO pins.
-    """
-    ser.close()
 
 
 def get_most_recent(data_bytes):
@@ -151,6 +134,7 @@ def set_motor(left_speed, right_speed):
 
 def send_to_uart(bits):
     """
+    DEPRECIATED
     Send bits to UART.
     :param bits: bits to be sent
     """
@@ -172,85 +156,71 @@ def execute_commands(bits):
             return
 
         w, a, s, d, space, up, down, left, right = bits
-        w, a, s, d, space, up, down, left, right = int(w), int(a), int(s), int(d), int(space), int(up), int(down), int(
-            left), int(right)
         # MOVEMENT
-        if w and a:
+        if w == ON and a == ON:
             set_motor(0.10, 0.75)
             send_to_client("W and A executed.")
-        elif w and d:
+        elif w == ON and d == ON:
             set_motor(0.75, 0.10)
             send_to_client("W and D executed.")
-        elif w and s:
+        elif w == ON and s == ON:
             set_motor(0, 0)
             send_to_client("W and S executed.")
-        elif s and a:
+        elif s == ON and a == ON:
             set_motor(-0.25, -0.75)
             send_to_client("S and A executed.")
-        elif s and d:
+        elif s == ON and d == ON:
             set_motor(-0.75, -0.25)
             send_to_client("S and D executed.")
-        elif w:
+        elif w == ON:
             set_motor(0.75, 0.75)
             send_to_client("W executed.")
-        elif s:
+        elif s == ON:
             set_motor(-0.75, -0.75)
             send_to_client("S executed.")
-        elif a:
+        elif a == ON:
             set_motor(-0.75, 0.75)
             send_to_client("A executed.")
-        elif d:
+        elif d == ON:
             set_motor(0.75, -0.75)
             send_to_client("D executed.")
         else:
             set_motor(0, 0)
-            send_to_client("RFES on standby.")
+            send_to_client("Movement IDLE")
 
         # FIRING MECHANISM
-        # send_to_uart(bits[4:])
-        """
-        global x_servo_thread
-        if left:
-            if not x_servo_thread.is_alive():
-                x_servo_thread = UpdateServoThread(x_servo, LEFT)
-                x_servo_thread.start()
-                return
+        global pwm_y
+        global move_y_thread
 
-        elif not left:
-            if x_servo_thread.is_alive():
-                x_servo_thread.stop()
-                x_servo_thread.join()
+        # DC case: both up and down keys are pressed
 
-        if right:
-            if not x_servo_thread.is_alive():
-                x_servo_thread = UpdateServoThread(x_servo, RIGHT)
-                x_servo_thread.start()
-                return
+        if up == ON and move_y_thread is None:
+            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, UP)
+            move_y_thread.start()
 
-        elif not right:
-            if x_servo_thread.is_alive():
-                x_servo_thread.stop()
-                x_servo_thread.join()
-        """
-        global current_pwm_y
-        if down:
-            print("Going up")
-            if current_pwm_y <= 10:
-                current_pwm_y += 0.5
-                pwm_y.change_duty_cycle(current_pwm_y)
+        elif up == OFF:
+            if move_y_thread is not None and move_y_thread.is_alive():
+                move_y_thread.stop()
+                move_y_thread.join()
+                move_y_thread = None
 
-        elif up:
-            print("Going down")
-            if current_pwm_y >= 6:
-                current_pwm_y -= 0.5
-                pwm_y.change_duty_cycle(current_pwm_y)
+        elif down == ON and move_y_thread is None:
+            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, DOWN)
+            move_y_thread.start()
 
-        if space:
+        elif down == OFF:
+            if move_y_thread is not None and move_y_thread.is_alive():
+                move_y_thread.stop()
+                move_y_thread.join()
+                move_y_thread = None
+
+        if space == ON:
             pump.on()
-            send_to_client("Pump on.")
-        else:
+            send_to_client("Spraying")
+
+        if space == OFF:
             pump.off()
-            send_to_client("Pump off.")
+            send_to_client("Stop spraying...")
 
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))

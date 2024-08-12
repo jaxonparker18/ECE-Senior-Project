@@ -2,14 +2,10 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="8a2ae673-1932-42a7-9693-2fa2c70889c6" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/Image_Recog_v8.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Image_Recognition_TFL.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/yolov5/data/rick_data.yaml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/yolov5/data/school_logo_data.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Image_Recognition.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Recognition.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/RFES_Control_Center.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Control_Center.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/RFES_Server.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolov5/data/coco128.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/yolov5/data/coco128.yaml" afterDir="false" />

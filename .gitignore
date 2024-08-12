@@ -5,3 +5,4 @@ ultralytics/
 1.py
 venv/
 .idea/
+exp.py
