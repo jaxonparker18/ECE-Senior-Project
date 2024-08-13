@@ -1,5 +1,5 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/12/2024 - 12:12PM
+# LAST UPDATE: Nathan - 8/12/2024 - 11:07PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -12,6 +12,7 @@ import time
 import numpy as np
 import imutils
 import io
+import struct
 # PI EXCLUSIVE
 import serial
 from gpiozero import Motor, Servo, PWMLED, LED
@@ -37,6 +38,10 @@ class UpdateServoThread(threading.Thread):
         self.increment = 0.0001
 
     def run(self):
+        """
+        Runs the thread which continuously moves the servo
+        until thread is killed.
+        """
         global PWM_MIN
         global PWM_MAX
         while not self.stop_event.is_set():
@@ -92,19 +97,45 @@ pump.off()
 client_socket = None
 
 
+def recv_data():
+    """
+    Receives the data coming in following the "prefixed with length protocol.
+    :returns the data that was received
+    """
+
+    global client_socket
+    raw_msg_len = client_socket.recv(4)  # get length of message
+
+    if not raw_msg_len:
+        return
+
+    msg_len = struct.unpack("!I", raw_msg_len)[0]
+    data = client_socket.recv(msg_len).decode('utf-8')
+    return data
+
+
 def get_most_recent(data_bytes):
     """
+    DEPRECIATED
     Gets the most recent command from data bytes.
     :param data_bytes: Bytes of data to be filtered
     :return: most recent bytes of data, 9 characters long
     """
+
     string_data = data_bytes.decode('utf-8')
-    return string_data[len(string_data) - 9: len(string_data)]
+    # return string_data[len(string_data) - 9: len(string_data)]
+    return string_data
 
 
-def send_to_client(data):
-    print("sent")
-    client_socket.sendall((''.join(data).encode('utf-8')))
+def send_to_client(message):
+    """
+    Sends the message using the "prefixed with length" protocol.
+    :param message: message to be sent
+    """
+
+    msg_len = len(message)
+    client_socket.sendall(struct.pack("!I", msg_len))
+    client_socket.sendall(message.encode('utf-8'))
 
 
 def set_motor(left_speed, right_speed):
@@ -142,20 +173,17 @@ def send_to_uart(bits):
     for i in range(len(bits)):
         uart_command = str(bits[i]).encode('utf-8')
         ser.write(uart_command)
-    # print("sent to UART: " + bits)
 
 
 def execute_commands(bits):
     """
     Execute the commands based on bits, where bits is [w, a, s, d, space, up, down, left, right]
-    :param bits: 9 characters long
+    :param bits: the values of each action
     """
-    try:
-        print(bits)
-        if len(bits) != 9:
-            return
 
-        w, a, s, d, space, up, down, left, right = bits
+    try:
+        w, a, s, d, space, up, down, left, right = tuple(map(str, bits.split(",")))
+
         # MOVEMENT
         if w == ON and a == ON:
             set_motor(0.10, 0.75)
@@ -193,7 +221,7 @@ def execute_commands(bits):
         global move_y_thread
 
         # DC case: both up and down keys are pressed
-
+        # KEYBOARD CONTROL
         if up == ON and move_y_thread is None:
             move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, UP)
             move_y_thread.start()
@@ -213,6 +241,10 @@ def execute_commands(bits):
                 move_y_thread.stop()
                 move_y_thread.join()
                 move_y_thread = None
+
+        # MOUSE CONTROL
+        if left != DC:
+            pwm_y.change_duty_cycle(float(left))
 
         if space == ON:
             pump.on()
@@ -238,18 +270,18 @@ def handle_commands():
             send_to_client("Connection established.")
             while True:
                 try:
-                    data = client_socket.recv(9, MSG_WAITALL)
+                    # data = client_socket.recv(1024) # , MSG_WAITALL
+                    data = recv_data()
                     if data:
                         # print(data)
-                        print("data is " + get_most_recent(data))
-                        execute_commands(get_most_recent(data))
+                        print("data is " + data)
+                        execute_commands(data)
                     if not data:
                         print("Commands disconnected from control center: No data")
                         break
                 except KeyboardInterrupt:
                     print("Commands disconnected from control center: Keyboard Interrupt exception")
                     client_socket.close()
-                    clean_up()
                     sys.exit(0)
                 # except:
                 #    print("Commands disconnected from control center: Failed to receive exception")
@@ -258,7 +290,6 @@ def handle_commands():
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             client_socket.close()
-            clean_up()
             sys.exit(0)
 
 
@@ -285,7 +316,6 @@ def handle_video():
             except KeyboardInterrupt:
                 print("Server hard-stopped with CTRL + C.")
                 client_sock.close()
-                clean_up()
                 sys.exit(0)
             except:
                 print("Video control disconnected from control center")
@@ -324,4 +354,3 @@ print("Server online...")
 
 commands_thread.join()
 video_thread.join()
-

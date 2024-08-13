@@ -1,5 +1,5 @@
 # echo-client.py
-# LAST UPDATE: Nathan - 8/11/2024 - 11:33PM
+# LAST UPDATE: Nathan - 8/12/2024 - 11:07PM
 import os
 import traceback
 from datetime import datetime
@@ -20,6 +20,7 @@ import numpy as np
 import base64
 import time
 import pathlib
+import struct
 
 temp = pathlib.PosixPath
 pathlib.PosixPath = pathlib.WindowsPath
@@ -55,6 +56,7 @@ class VideoThreadPiCam(QThread):
         :param host: the host of the server, (ip address)
         :param port: the port number
         """
+
         super().__init__(parent)
         self.connected = status
         self.client_socket = None
@@ -67,6 +69,7 @@ class VideoThreadPiCam(QThread):
         Runs the thread by connecting to the TCP socket receiving frames in bytes and decoding it
         using cv2, then displaying it onto the window.
         """
+        
         BUFF_SIZE = 65536
         addr = (self.host, self.port)
         self.client_socket = socket(AF_INET, SOCK_STREAM)
@@ -145,7 +148,6 @@ class LoggerThread(QThread):
 
         self.update_signal.emit(self.side, self.message)
 
-
 class MainWindow(QWidget):
     """
     The main window that is displayed upon code execution.
@@ -168,12 +170,20 @@ class MainWindow(QWidget):
         self.ip_entry = QLineEdit()
         self.port_entry = QLineEdit()
         self.c_d_button = QPushButton()
+
         self.socket = None
         self.browser = None
         self.feed = None
         self.feed_thread = None
         self.coms_thread = None
         self.recv_thread = None
+
+        # mouse track
+        self.is_tracking_mouse = False
+        self.left_screen = 20
+        self.right_screen = 1520
+        self.top_screen = 185
+        self.bot_screen = 1023
 
         # corresponds to [W, A, S, D, spacebar, up, down, left, right]
         self.keys = IDLE
@@ -230,24 +240,80 @@ class MainWindow(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
 
+    def mouseMoveEvent(self, event):
+        """
+        Tracks the movement of the mouse and bounds mouse to the window screen.
+        :param event: the occuring event
+        """
+        if self.is_tracking_mouse:
+            pwm_max = 10
+            pwm_min = 6
+            y = QCursor.pos().y()
+            offset_y = y - self.top_screen  # 0 - 800
+            percent_y = float(offset_y/(self.bot_screen - self.top_screen))
+            pwm_value = ((pwm_max - pwm_min) * percent_y) + pwm_min
+            # self.status_label.setText(str(event.x()) + " " + str(pwm_value))
+            print(pwm_value)
+            if QCursor.pos().y() <= self.top_screen:
+                QCursor.setPos(QPoint(QCursor.pos().x(), self.top_screen))
+            elif QCursor.pos().y() >= self.bot_screen:
+                QCursor.setPos(QPoint(QCursor.pos().x(), self.bot_screen))
+
+            if QCursor.pos().x() >= self.right_screen:
+                QCursor.setPos(QPoint(self.right_screen, QCursor.pos().y()))
+            elif QCursor.pos().x() <= self.left_screen:
+                QCursor.setPos(QPoint(self.left_screen, QCursor.pos().y()))
+
+            self.keys = IDLE.copy()
+            self.keys[7] = str(round(pwm_value, 2)) # RIGHT NOW, THE PWM VALUE IS SENT ON "LEFT" VALUE
+            self.send_commands()
+
     def send_commands(self):
         """
         Sends the commands inputted by user to the TCP server.
         """
+
         try:
-            self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+            # self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+            keys_as_string = str(self.keys)[1: -1].replace(" ", "").replace("'", "").strip()
+            self.send_packed_message(keys_as_string)
 
         except:
             self.status = "DISCONNECTED"
 
+    def send_packed_message(self, message):
+        """
+        Sends the message using the "prefixed with length" protocol.
+        :param message: message to be sent
+        """
+
+        msg_len = len(message)
+        self.socket.sendall(struct.pack("!I", msg_len))
+        self.socket.sendall(message.encode('utf-8'))
+
     def recv_data(self):
+        """
+        Receives the data coming in following the "prefixed with length protocol.
+        :returns the data that was received
+        """
+
+        raw_msg_len = self.socket.recv(4)  # get length of message
+
+        if not raw_msg_len:
+            return
+
+        msg_len = struct.unpack("!I", raw_msg_len)[0]
+        data = self.socket.recv(msg_len).decode('utf-8')
+        return data
+
+    def log_data(self):
         """
         Receives data from TCP server.
         """
 
         while True:
             try:
-                data = self.socket.recv(1024).decode('utf-8')
+                data = self.recv_data()
                 recv_thread = LoggerThread(self, SERVER, data)
                 recv_thread.update_signal.connect(self.log)
                 recv_thread.start()
@@ -266,8 +332,8 @@ class MainWindow(QWidget):
             self.socket = socket(AF_INET, SOCK_STREAM)
             try:
                 self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
-                self.log(SERVER, self.socket.recv(1024).decode('utf-8'))
-                self.recv_thread = threading.Thread(target=self.recv_data, args=())
+                self.log(SERVER, self.recv_data())
+                self.recv_thread = threading.Thread(target=self.log_data, args=())
                 self.recv_thread.start()
             except:
                 print("ERROR")
@@ -305,6 +371,7 @@ class MainWindow(QWidget):
 
         self.feed = QLabel()
         self.feed.setFixedSize(1500, 840)
+
         self.feed.setPixmap(QPixmap("res/not_connected.png"))
         self.feed.setAlignment(Qt.AlignCenter)
         self.bot_layout.addWidget(self.feed)
@@ -382,11 +449,16 @@ class MainWindow(QWidget):
         Listens for any key pressed events.
         :param event: the type of event that occurs
         """
+        key = event.key()
+        if key == Qt.Key_M:
+            if not self.is_tracking_mouse:
+                self.is_tracking_mouse = True
+            else:
+                self.is_tracking_mouse = False
 
         if self.status == "DISCONNECTED":
             return
 
-        key = event.key()
         self.keys = IDLE.copy()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
