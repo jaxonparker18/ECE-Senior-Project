@@ -1,5 +1,5 @@
 # echo-client.py
-# LAST UPDATE: Nathan - 8/12/2024 - 11:07PM
+# LAST UPDATE: Nathan - 8/14/2024 - 10:07 AM
 import os
 import traceback
 from datetime import datetime
@@ -203,13 +203,13 @@ class MainWindow(QWidget):
         self.top_panel_layout = QHBoxLayout()
         self.top_widget.setLayout(self.top_panel_layout)
 
-        # Top panel, left side
+        # Top panel, left side (FIELDS, C/D BUTTON)
         self.TL_widget = QWidget()
         self.TL_layout = QHBoxLayout()
         self.TL_layout.setAlignment(Qt.AlignLeft)
         self.TL_widget.setLayout(self.TL_layout)
 
-        # Top panel, right side
+        # Top panel, right side ( STATUS)
         self.TR_widget = QWidget()
         self.TR_layout = QVBoxLayout()
         self.TR_layout.setAlignment(Qt.AlignRight)
@@ -410,12 +410,27 @@ class MainWindow(QWidget):
         logs_l = QVBoxLayout()
         logs_w.setLayout(logs_l)
 
+        # TOP ROW OF LOGS
+        logs_top_w = QWidget()
+        logs_top_l = QHBoxLayout()
+        logs_top_w.setLayout(logs_top_l)
+
         logger_label = QLabel("Logs")
         logger_label.setFont(QFont("sans serif", 12))
-        logs_l.addWidget(logger_label)
+        logs_top_l.addWidget(logger_label)
+
+        clear_log_button = QPushButton()
+        clear_log_button.setText("Clear logs")
+        clear_log_button.setFixedSize(100, 30)
+        clear_log_button.clicked.connect(lambda: self.logger.setText(""))
+        logs_top_l.addWidget(clear_log_button)
+
+        logs_l.addWidget(logs_top_w)
+
+        # logs_l.addWidget(logger_label)
 
         self.logger = QTextBrowser(self)
-        self.logger.setFixedSize(330, 800)
+        self.logger.setFixedSize(346, 770)
         self.logger.setReadOnly(True)
         self.logger.setFocusPolicy(Qt.NoFocus)
 
@@ -435,9 +450,9 @@ class MainWindow(QWidget):
         # print(side, message)
         time = datetime.now().strftime("%H:%M:%S")
         if side == 0:
-            self.logger.setText(str(self.logger.toPlainText()) + "\n" + time + " - CLIENT: " + message)
+            self.logger.setText(str(self.logger.toPlainText()) + ("\n" if self.logger.toPlainText() != "" else "") + time + " - CLIENT: " + message)
         else:
-            self.logger.setText(str(self.logger.toPlainText()) + "\n" + time + " - SERVER: " + message)
+            self.logger.setText(str(self.logger.toPlainText()) + ("\n" if self.logger.toPlainText() != "" else "") + time + " - SERVER: " + message)
         self.logger.verticalScrollBar().setValue(
             self.logger.verticalScrollBar().maximum()
         )
@@ -475,10 +490,10 @@ class MainWindow(QWidget):
                 self.keys[5] = '1'
             if key == Qt.Key_Down:
                 self.keys[6] = '1'
-            if key == Qt.Key_Left:
-                self.keys[7] = '1'
-            if key == Qt.Key_Right:
-                self.keys[8] = '1'
+            # if key == Qt.Key_Left:
+            #     self.keys[7] = '1'
+            # if key == Qt.Key_Right:
+            #     self.keys[8] = '1'
             self.send_commands()
 
 
@@ -508,10 +523,10 @@ class MainWindow(QWidget):
                 self.keys[5] = '0'
             if key == Qt.Key_Down:
                 self.keys[6] = '0'
-            if key == Qt.Key_Left:
-                self.keys[7] = '0'
-            if key == Qt.Key_Right:
-                self.keys[8] = '0'
+            # if key == Qt.Key_Left:
+            #     self.keys[7] = '0'
+            # if key == Qt.Key_Right:
+            #     self.keys[8] = '0'
             self.send_commands()
 
     def create_label_panel(self):

@@ -1,5 +1,5 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/12/2024 - 11:07PM
+# LAST UPDATE: Nathan - 8/14/2024 - 10:07 AM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -214,7 +214,7 @@ def execute_commands(bits):
             send_to_client("D executed.")
         else:
             set_motor(0, 0)
-            send_to_client("Movement IDLE")
+            # send_to_client("Movement IDLE")
 
         # FIRING MECHANISM
         global pwm_y
