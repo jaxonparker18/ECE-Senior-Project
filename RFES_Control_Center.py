@@ -252,8 +252,6 @@ class MainWindow(QWidget):
             offset_y = y - self.top_screen  # 0 - 800
             percent_y = float(offset_y/(self.bot_screen - self.top_screen))
             pwm_value = ((pwm_max - pwm_min) * percent_y) + pwm_min
-            # self.status_label.setText(str(event.x()) + " " + str(pwm_value))
-            print(pwm_value)
             if QCursor.pos().y() <= self.top_screen:
                 QCursor.setPos(QPoint(QCursor.pos().x(), self.top_screen))
             elif QCursor.pos().y() >= self.bot_screen:
