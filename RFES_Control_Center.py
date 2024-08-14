@@ -69,7 +69,7 @@ class VideoThreadPiCam(QThread):
         Runs the thread by connecting to the TCP socket receiving frames in bytes and decoding it
         using cv2, then displaying it onto the window.
         """
-        
+
         BUFF_SIZE = 65536
         addr = (self.host, self.port)
         self.client_socket = socket(AF_INET, SOCK_STREAM)
@@ -453,8 +453,10 @@ class MainWindow(QWidget):
         if key == Qt.Key_M:
             if not self.is_tracking_mouse:
                 self.is_tracking_mouse = True
+                self.log(CLIENT, "SWITCHED TO MOUSE CONTROL.")
             else:
                 self.is_tracking_mouse = False
+                self.log(CLIENT, "SWITCHED TO KEYBOARD CONTROL.")
 
         if self.status == "DISCONNECTED":
             return

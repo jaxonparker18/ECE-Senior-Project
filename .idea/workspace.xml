@@ -6,7 +6,6 @@
       <change afterPath="$PROJECT_DIR$/yolov5/data/school_logo_data.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/RFES_Control_Center.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Control_Center.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/RFES_Server.py" beforeDir="false" afterPath="$PROJECT_DIR$/RFES_Server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolov5/data/coco128.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/yolov5/data/coco128.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolov5/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/yolov5/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolov5/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolov5/train.py" afterDir="false" />
