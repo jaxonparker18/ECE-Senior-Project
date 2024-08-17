@@ -96,6 +96,17 @@ pump.off()
 # SERVER
 client_socket = None
 
+# control variables
+w = DC
+a = DC
+s = DC
+d = DC
+space = DC
+up = DC
+down = DC
+left = DC
+right = DC
+
 
 def recv_data():
     """
@@ -182,7 +193,35 @@ def execute_commands(bits):
     """
 
     try:
-        w, a, s, d, space, up, down, left, right = tuple(map(str, bits.split(",")))
+        global w
+        global a
+        global s
+        global d
+        global space
+        global up
+        global down
+        global left
+        global right
+
+        bits = tuple(map(str, bits.split(",")))
+        if bits[0] != DC:
+            w = bits[0]
+        if bits[1] != DC:
+            a = bits[1]
+        if bits[2] != DC:
+            s = bits[2]
+        if bits[3] != DC:
+            d = bits[3]
+        if bits[4] != DC:
+            space = bits[4]
+        if bits[5] != DC:
+            up = bits[5]
+        if bits[6] != DC:
+            down = bits[6]
+        if bits[7] != DC:
+            left = bits[7]
+        if bits[8] != DC:
+            right = bits[8]
 
         # MOVEMENT
         if w == ON and a == ON:
