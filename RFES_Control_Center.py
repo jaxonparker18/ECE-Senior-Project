@@ -63,6 +63,7 @@ class VideoThreadPiCam(QThread):
         self.host = host
         self.port = port
         self.grab_frame = True
+        self.x = 0
 
     def run(self):
         """
@@ -312,6 +313,8 @@ class MainWindow(QWidget):
         while True:
             try:
                 data = self.recv_data()
+                # set self.feed_thread.x to update to new ch pos
+                # if data is about servo movement, move the image instead.
                 recv_thread = LoggerThread(self, SERVER, data)
                 recv_thread.update_signal.connect(self.log)
                 recv_thread.start()
