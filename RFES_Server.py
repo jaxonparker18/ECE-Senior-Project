@@ -223,6 +223,7 @@ def execute_commands(bits):
         if bits[8] != DC:
             right = bits[8]
 
+        print(w, a, s, d, space, up, down, left, right)
         # MOVEMENT
         if w == ON and a == ON:
             set_motor(0.10, 0.75)
@@ -258,24 +259,29 @@ def execute_commands(bits):
         # FIRING MECHANISM
         global pwm_y
         global move_y_thread
-
+        print("up:", up)
+        print("down:", down)
         # DC case: both up and down keys are pressed
         # KEYBOARD CONTROL
         if up == ON and move_y_thread is None:
+            print("on", move_y_thread)
             move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, UP)
             move_y_thread.start()
 
         elif up == OFF:
+            print("up off", move_y_thread)
             if move_y_thread is not None and move_y_thread.is_alive():
                 move_y_thread.stop()
                 move_y_thread.join()
                 move_y_thread = None
 
-        elif down == ON and move_y_thread is None:
+        if down == ON and move_y_thread is None:
+            print("running")
             move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, DOWN)
             move_y_thread.start()
 
         elif down == OFF:
+            print("down off")
             if move_y_thread is not None and move_y_thread.is_alive():
                 move_y_thread.stop()
                 move_y_thread.join()
@@ -292,6 +298,26 @@ def execute_commands(bits):
         if space == OFF:
             pump.off()
             send_to_client("Stop spraying...")
+
+        # reset if 0
+        if bits[0] != OFF:
+            w = DC
+        if bits[1] != OFF:
+            a = DC
+        if bits[2] != OFF:
+            s = DC
+        if bits[3] != OFF:
+            d = DC
+        if bits[4] != OFF:
+            space = DC
+        if bits[5] != DC:
+            up = DC
+        if bits[6] != OFF:
+            down = DC
+        if bits[7] != OFF:
+            left = DC
+        if bits[8] != OFF:
+            right = DC
 
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))
