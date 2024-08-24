@@ -1,5 +1,5 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/14/2024 - 10:07 AM
+# LAST UPDATE: Nathan - 8/23/2024 - 7:30 PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -51,6 +51,10 @@ class UpdateServoThread(threading.Thread):
             elif self.direction == DOWN:
                 if self.current_pwm_val <= self.pwm_max:
                     self.current_pwm_val += self.increment
+            elif self.direction == LEFT:
+                pass
+            elif self.direction == RIGHT:
+                pass
             self.servo.change_duty_cycle(self.current_pwm_val)
 
     def stop(self):
@@ -80,14 +84,21 @@ right_motor = Motor("BOARD18", "BOARD16")
 # SERVOS
 ## MAX PWM IS 2.4MS or 12% DUTY CYCLE
 ## MIN PWM IS 0.8MS or  4% DUTY CYCLE
-PWM_MAX = 10
-PWM_MIN = 6
-PWM_MID = 8
+PWM_Y_MAX = 10
+PWM_Y_MIN = 6
+PWM_Y_MID = 8
 pwm_y = HardwarePWM(pwm_channel=2, hz=50, chip=2)
-current_pwm_y = PWM_MID
+current_pwm_y = PWM_Y_MID
 pwm_y.start(current_pwm_y)
-
 move_y_thread = None
+
+PWM_X_MAX = 10
+PWM_X_MIN = 6
+PWM_X_MID = 8
+pwm_x = HardwarePWM(pwm_channel=3, hz=50, chip=2)
+current_pwm_x = PWM_X_MID
+pwm_x.start(current_pwm_x)
+move_x_thread = None
 
 # PUMP
 pump = LED("BOARD15")
@@ -265,7 +276,7 @@ def execute_commands(bits):
         # KEYBOARD CONTROL
         if up == ON and move_y_thread is None:
             print("on", move_y_thread)
-            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, UP)
+            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, UP)
             move_y_thread.start()
 
         elif up == OFF:
@@ -277,7 +288,7 @@ def execute_commands(bits):
 
         if down == ON and move_y_thread is None:
             print("running")
-            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_MAX, PWM_MIN, DOWN)
+            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, DOWN)
             move_y_thread.start()
 
         elif down == OFF:
