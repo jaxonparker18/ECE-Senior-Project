@@ -4,13 +4,15 @@ import torch
 from matplotlib import pyplot as plt
 import numpy as np
 import pathlib
-
+import subprocess
+import io
+import contextlib
 
 temp = pathlib.PosixPath
 pathlib.PosixPath = pathlib.WindowsPath
 
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
-# model = torch.hub.load('ultralytics/yolov5', 'custom', path='yolov5n.pt', force_reload=True)
+# model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+model = torch.hub.load('ultralytics/yolov5', 'custom', path='fire_v5n50e.pt', force_reload=True)
 
 # image = 'https://ultralytics.com/images/zidane.jpg'
 # results = model(image)

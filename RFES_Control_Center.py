@@ -1,5 +1,5 @@
 # echo-client.py
-# LAST UPDATE: Nathan - 8/14/2024 - 10:07 AM
+# LAST UPDATE: Nathan - 8/27/2024 - 3:19 PM
 import os
 import traceback
 from datetime import datetime
@@ -35,7 +35,8 @@ PORT = 2100  # The port used by the server, must be >= 1024
 CLIENT = 0
 SERVER = 1
 
-IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
+# corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
+IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
 
 # thread stop flags
 video_stop_flag = threading.Event()
@@ -92,7 +93,6 @@ class VideoThreadPiCam(QThread):
                     data = base64.b64decode(message)
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-
 
                     # OBJ DETECTION
                     # frame = cv2.resize(frame, (640, 480)) # (1920, 1080) (640, 480)
@@ -186,7 +186,7 @@ class MainWindow(QWidget):
         self.top_screen = 185
         self.bot_screen = 1023
 
-        # corresponds to [W, A, S, D, spacebar, up, down, left, right]
+        # corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
         self.keys = IDLE
 
         self.display_width = 1500
@@ -247,12 +247,22 @@ class MainWindow(QWidget):
         :param event: the occuring event
         """
         if self.is_tracking_mouse:
-            pwm_max = 10
-            pwm_min = 6
+            pwm_y_max = 10
+            pwm_y_min = 5
             y = QCursor.pos().y()
             offset_y = y - self.top_screen  # 0 - 800
             percent_y = float(offset_y/(self.bot_screen - self.top_screen))
-            pwm_value = ((pwm_max - pwm_min) * percent_y) + pwm_min
+            percent_y_invert = 1 - percent_y
+            pwm_y_value = ((pwm_y_max - pwm_y_min) * percent_y_invert) + pwm_y_min
+
+            pwm_x_max = 10.4
+            pwm_x_min = 7.5
+            x = QCursor.pos().x()
+            offset_x = x - self.left_screen
+            percent_x = float(offset_x/(self.right_screen - self.left_screen))
+            percent_x_invert = 1 - percent_x    # because of servos
+            pwm_x_value = ((pwm_x_max - pwm_x_min) * percent_x_invert) + pwm_x_min
+
             if QCursor.pos().y() <= self.top_screen:
                 QCursor.setPos(QPoint(QCursor.pos().x(), self.top_screen))
             elif QCursor.pos().y() >= self.bot_screen:
@@ -263,8 +273,10 @@ class MainWindow(QWidget):
             elif QCursor.pos().x() <= self.left_screen:
                 QCursor.setPos(QPoint(self.left_screen, QCursor.pos().y()))
 
+
             self.keys = IDLE.copy()
-            self.keys[7] = str(round(pwm_value, 2)) # RIGHT NOW, THE PWM VALUE IS SENT ON "LEFT" VALUE
+            self.keys[9] = str(round(pwm_y_value, 2))
+            self.keys[10] = str(round(pwm_x_value, 2))
             self.send_commands()
 
     def send_commands(self):
@@ -493,10 +505,10 @@ class MainWindow(QWidget):
                 self.keys[5] = '1'
             if key == Qt.Key_Down:
                 self.keys[6] = '1'
-            # if key == Qt.Key_Left:
-            #     self.keys[7] = '1'
-            # if key == Qt.Key_Right:
-            #     self.keys[8] = '1'
+            if key == Qt.Key_Left:
+                self.keys[7] = '1'
+            if key == Qt.Key_Right:
+                self.keys[8] = '1'
             self.send_commands()
 
 
@@ -526,10 +538,10 @@ class MainWindow(QWidget):
                 self.keys[5] = '0'
             if key == Qt.Key_Down:
                 self.keys[6] = '0'
-            # if key == Qt.Key_Left:
-            #     self.keys[7] = '0'
-            # if key == Qt.Key_Right:
-            #     self.keys[8] = '0'
+            if key == Qt.Key_Left:
+                self.keys[7] = '0'
+            if key == Qt.Key_Right:
+                self.keys[8] = '0'
             self.send_commands()
 
     def create_label_panel(self):

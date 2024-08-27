@@ -1,5 +1,5 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/23/2024 - 7:30 PM
+# LAST UPDATE: Nathan - 8/27/2024 - 3:19 PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -42,20 +42,21 @@ class UpdateServoThread(threading.Thread):
         Runs the thread which continuously moves the servo
         until thread is killed.
         """
-        global PWM_MIN
-        global PWM_MAX
         while not self.stop_event.is_set():
             if self.direction == UP:
-                if self.current_pwm_val >= self.pwm_min:
-                    self.current_pwm_val -= self.increment
-            elif self.direction == DOWN:
                 if self.current_pwm_val <= self.pwm_max:
                     self.current_pwm_val += self.increment
+            elif self.direction == DOWN:
+                if self.current_pwm_val >= self.pwm_min:
+                    self.current_pwm_val -= self.increment
             elif self.direction == LEFT:
-                pass
+                if self.current_pwm_val <= self.pwm_max:
+                    self.current_pwm_val += self.increment
             elif self.direction == RIGHT:
-                pass
+                if self.current_pwm_val >= self.pwm_min:
+                    self.current_pwm_val -= self.increment
             self.servo.change_duty_cycle(self.current_pwm_val)
+            print(self.current_pwm_val)
 
     def stop(self):
         self.stop_event.set()
@@ -85,16 +86,16 @@ right_motor = Motor("BOARD18", "BOARD16")
 ## MAX PWM IS 2.4MS or 12% DUTY CYCLE
 ## MIN PWM IS 0.8MS or  4% DUTY CYCLE
 PWM_Y_MAX = 10
-PWM_Y_MIN = 6
-PWM_Y_MID = 8
+PWM_Y_MIN = 5
+PWM_Y_MID = 7.5
 pwm_y = HardwarePWM(pwm_channel=2, hz=50, chip=2)
 current_pwm_y = PWM_Y_MID
 pwm_y.start(current_pwm_y)
 move_y_thread = None
 
-PWM_X_MAX = 10
-PWM_X_MIN = 6
-PWM_X_MID = 8
+PWM_X_MAX = 10.4
+PWM_X_MIN = 7.5
+PWM_X_MID = 9.3
 pwm_x = HardwarePWM(pwm_channel=3, hz=50, chip=2)
 current_pwm_x = PWM_X_MID
 pwm_x.start(current_pwm_x)
@@ -117,6 +118,8 @@ up = DC
 down = DC
 left = DC
 right = DC
+m_y = DC
+m_x = DC
 
 
 def recv_data():
@@ -213,8 +216,12 @@ def execute_commands(bits):
         global down
         global left
         global right
+        global m_y
+        global m_x
 
         bits = tuple(map(str, bits.split(",")))
+        print("bits are", bits)
+        # w, a, s, d, space, up, down, left, right = bits
         if bits[0] != DC:
             w = bits[0]
         if bits[1] != DC:
@@ -233,8 +240,12 @@ def execute_commands(bits):
             left = bits[7]
         if bits[8] != DC:
             right = bits[8]
+        if bits[9] != DC:
+            m_y = bits[9]
+        if bits[10] != DC:
+            m_x = bits[10]
+        print("start", w, a, s, d, space, up, down, left, right, m_y, m_x)
 
-        print(w, a, s, d, space, up, down, left, right)
         # MOVEMENT
         if w == ON and a == ON:
             set_motor(0.10, 0.75)
@@ -270,37 +281,59 @@ def execute_commands(bits):
         # FIRING MECHANISM
         global pwm_y
         global move_y_thread
-        print("up:", up)
-        print("down:", down)
+        global pwm_x
+        global move_x_thread
         # DC case: both up and down keys are pressed
         # KEYBOARD CONTROL
-        if up == ON and move_y_thread is None:
-            print("on", move_y_thread)
-            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, UP)
-            move_y_thread.start()
 
-        elif up == OFF:
-            print("up off", move_y_thread)
-            if move_y_thread is not None and move_y_thread.is_alive():
-                move_y_thread.stop()
-                move_y_thread.join()
-                move_y_thread = None
+        if m_y != DC:
+            pwm_y.change_duty_cycle(float(m_y))
+        else:
+            if up == ON and move_y_thread is None:
+                move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, UP)
+                move_y_thread.start()
 
-        if down == ON and move_y_thread is None:
-            print("running")
-            move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, DOWN)
-            move_y_thread.start()
+            elif up == OFF:
+                if move_y_thread is not None and move_y_thread.is_alive():
+                    move_y_thread.stop()
+                    move_y_thread.join()
+                    move_y_thread = None
 
-        elif down == OFF:
-            print("down off")
-            if move_y_thread is not None and move_y_thread.is_alive():
-                move_y_thread.stop()
-                move_y_thread.join()
-                move_y_thread = None
+            elif down == ON and move_y_thread is None:
+                move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, DOWN)
+                move_y_thread.start()
+
+            elif down == OFF:
+                if move_y_thread is not None and move_y_thread.is_alive():
+                    move_y_thread.stop()
+                    move_y_thread.join()
+                    move_y_thread = None
+        if m_x != DC:
+            pwm_x.change_duty_cycle(float(m_x))
+        else:
+            if left == ON and move_x_thread is None:
+                move_x_thread = UpdateServoThread(pwm_x, pwm_x._duty_cycle, PWM_X_MAX, PWM_X_MIN, LEFT)
+                move_x_thread.start()
+
+            elif left == OFF:
+                if move_x_thread is not None and move_x_thread.is_alive():
+                    move_x_thread.stop()
+                    move_x_thread.join()
+                    move_x_thread = None
+
+            elif right == ON and move_x_thread is None:
+                move_x_thread = UpdateServoThread(pwm_x, pwm_x._duty_cycle, PWM_X_MAX, PWM_X_MIN, RIGHT)
+                move_x_thread.start()
+
+            elif right == OFF:
+                if move_x_thread is not None and move_x_thread.is_alive():
+                    move_x_thread.stop()
+                    move_x_thread.join()
+                    move_x_thread = None
 
         # MOUSE CONTROL
-        if left != DC:
-            pwm_y.change_duty_cycle(float(left))
+        # if left != DC:
+        #    pwm_y.change_duty_cycle(float(left))
 
         if space == ON:
             pump.on()
@@ -311,24 +344,29 @@ def execute_commands(bits):
             send_to_client("Stop spraying...")
 
         # reset if 0
-        if bits[0] != OFF:
+        if bits[0] == OFF:
             w = DC
-        if bits[1] != OFF:
+        if bits[1] == OFF:
             a = DC
-        if bits[2] != OFF:
+        if bits[2] == OFF:
             s = DC
-        if bits[3] != OFF:
+        if bits[3] == OFF:
             d = DC
-        if bits[4] != OFF:
+        if bits[4] == OFF:
             space = DC
-        if bits[5] != DC:
+        if bits[5] == OFF:
             up = DC
-        if bits[6] != OFF:
+        if bits[6] == OFF:
             down = DC
-        if bits[7] != OFF:
+        if bits[7] == OFF:
             left = DC
-        if bits[8] != OFF:
+        if bits[8] == OFF:
             right = DC
+        if bits[9] == OFF:
+            right = DC
+        if bits[10] == OFF:
+            right = DC
+        print("end", w, a, s, d, space, up, down, left, right)
 
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))
