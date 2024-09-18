@@ -1,0 +1,30 @@
+// README:
+//
+// AVAILABLE COMMANDS ARE:
+// forward(x)
+// backward(x)
+// left(x)
+// right(x)
+// aim_up(s)
+// aim_down(s)
+// aim_left(s)
+// aim_right(s)
+// WHERE x IS THE VALUE FOR THE COMMAND
+// AND s IS THE DEGREE OF THE TURN
+
+// EXAMPLE:
+// forward(10) where 10 is the duration of this command (in seconds)
+//
+// FOR AIMING COMMANDS:
+// aim_up(90) where 90 is the angle to turn
+//
+
+// PATROL
+forward(3)
+left(1)
+forward(3)
+left(1)
+forward(3)
+left(1)
+forward(3)
+left(1)

@@ -22,10 +22,12 @@ import time
 import pathlib
 import struct
 
+import Instructions_Reader
+
 temp = pathlib.PosixPath
 pathlib.PosixPath = pathlib.WindowsPath
 
-#GLOBAL VARIABLES
+# GLOBAL VARIABLES
 
 HOST = "169.254.196.32"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
@@ -37,7 +39,11 @@ SERVER = 1
 
 # corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
 IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
+OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
 
+ON = '1'
+OFF = '0'
+DC = 'x'
 # thread stop flags
 video_stop_flag = threading.Event()
 recv_stop_flag = threading.Event()
@@ -47,6 +53,7 @@ class VideoThreadPiCam(QThread):
     """
     Thread class to run the camera on a different thread.
     """
+
     change_pixmap_signal = pyqtSignal(np.ndarray)
 
     def __init__(self, parent, status, host, port):
@@ -149,6 +156,7 @@ class LoggerThread(QThread):
 
         self.update_signal.emit(self.side, self.message)
 
+
 class MainWindow(QWidget):
     """
     The main window that is displayed upon code execution.
@@ -158,6 +166,7 @@ class MainWindow(QWidget):
         """
         Constructs the window that is displayed.
         """
+
         super(MainWindow, self).__init__()
         self.logger = None
         self.status_label = None
@@ -178,6 +187,7 @@ class MainWindow(QWidget):
         self.feed_thread = None
         self.coms_thread = None
         self.recv_thread = None
+        self.run_instr_thread = None
 
         # mouse track
         self.is_tracking_mouse = False
@@ -246,12 +256,13 @@ class MainWindow(QWidget):
         Tracks the movement of the mouse and bounds mouse to the window screen.
         :param event: the occuring event
         """
+
         if self.is_tracking_mouse:
             pwm_y_max = 10
             pwm_y_min = 5
             y = QCursor.pos().y()
             offset_y = y - self.top_screen  # 0 - 800
-            percent_y = float(offset_y/(self.bot_screen - self.top_screen))
+            percent_y = float(offset_y / (self.bot_screen - self.top_screen))
             percent_y_invert = 1 - percent_y
             pwm_y_value = ((pwm_y_max - pwm_y_min) * percent_y_invert) + pwm_y_min
 
@@ -259,8 +270,8 @@ class MainWindow(QWidget):
             pwm_x_min = 7.5
             x = QCursor.pos().x()
             offset_x = x - self.left_screen
-            percent_x = float(offset_x/(self.right_screen - self.left_screen))
-            percent_x_invert = 1 - percent_x    # because of servos
+            percent_x = float(offset_x / (self.right_screen - self.left_screen))
+            percent_x_invert = 1 - percent_x  # because of servos
             pwm_x_value = ((pwm_x_max - pwm_x_min) * percent_x_invert) + pwm_x_min
 
             if QCursor.pos().y() <= self.top_screen:
@@ -272,7 +283,6 @@ class MainWindow(QWidget):
                 QCursor.setPos(QPoint(self.right_screen, QCursor.pos().y()))
             elif QCursor.pos().x() <= self.left_screen:
                 QCursor.setPos(QPoint(self.left_screen, QCursor.pos().y()))
-
 
             self.keys = IDLE.copy()
             self.keys[9] = str(round(pwm_y_value, 2))
@@ -357,7 +367,7 @@ class MainWindow(QWidget):
             self.update_status()
 
             # Creates a new thread for the camera
-            video_stop_flag.clear()     # resets flag
+            video_stop_flag.clear()  # resets flag
             self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
                 self.port_entry.text()) + 1)
 
@@ -377,6 +387,34 @@ class MainWindow(QWidget):
             # disables video thread
             video_stop_flag.set()
 
+    def run_instructions(self):
+        """
+        Starts the run_instr thread to run instrucitons.
+        """
+        instructions_path = "instructions.txt"  # should be from a field
+        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=instructions_path)
+        self.run_instr_thread.start()
+
+    def execute_instructions(self, instructions_path):
+        """
+        Executes the instructions file by sending commands to RFES.
+        :param instructions_path: file path
+        """
+        # NEEDS TO BE A ASYNC SINCE THIS HAS DELAY
+        instructions = Instructions_Reader.path_to_instructions(instructions_path)  # "["forward(10)", "left(90)", ...]"
+        for instruction in instructions:
+            inst = Instructions_Reader.instruction_as_tuple(instruction)    # "("forward", "10")"
+            command = inst[0]           # forward
+            value = float(inst[1])      # 10
+            self.keys = OFF_KEYS
+            self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
+            self.send_commands()
+            if command in ["aim_left", "aim_right", "aim_up", "aim_down"]: # if it's aiming, turn value to degrees
+                # convert value to angle, so use value to see how long it takes to turn a certain angle
+                time.sleep(value)   # right now it is still value as seconds
+            else:
+                time.sleep(value)   # value is treated as seconds
+
     def display_disconnected(self):
         """
         Displays the disconnected icon when currently disconnected.
@@ -389,12 +427,12 @@ class MainWindow(QWidget):
         self.feed.setAlignment(Qt.AlignCenter)
         self.bot_layout.addWidget(self.feed)
 
-
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
         """
         Updates the image_label with a new opencv image.
         """
+
         if self.status == "CONNECTED":
             display_img = cv_img
             qt_img = self.convert_cv_qt(display_img)
@@ -413,7 +451,7 @@ class MainWindow(QWidget):
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
         convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        p = convert_to_Qt_format.scaled(self.display_width, self.display_height)        # Qt.KeepAspectRatio
+        p = convert_to_Qt_format.scaled(self.display_width, self.display_height)  # Qt.KeepAspectRatio
         return QPixmap.fromImage(p)
 
     def display_logs(self):
@@ -462,12 +500,15 @@ class MainWindow(QWidget):
         :param side: message source, client/server
         :param message: the message to be logged
         """
+
         # print(side, message)
         time = datetime.now().strftime("%H:%M:%S")
         if side == 0:
-            self.logger.setText(str(self.logger.toPlainText()) + ("\n" if self.logger.toPlainText() != "" else "") + time + " - CLIENT: " + message)
+            self.logger.setText(str(self.logger.toPlainText()) + (
+                "\n" if self.logger.toPlainText() != "" else "") + time + " - CLIENT: " + message)
         else:
-            self.logger.setText(str(self.logger.toPlainText()) + ("\n" if self.logger.toPlainText() != "" else "") + time + " - SERVER: " + message)
+            self.logger.setText(str(self.logger.toPlainText()) + (
+                "\n" if self.logger.toPlainText() != "" else "") + time + " - SERVER: " + message)
         self.logger.verticalScrollBar().setValue(
             self.logger.verticalScrollBar().maximum()
         )
@@ -477,6 +518,7 @@ class MainWindow(QWidget):
         Listens for any key pressed events.
         :param event: the type of event that occurs
         """
+
         key = event.key()
         if key == Qt.Key_M:
             if not self.is_tracking_mouse:
@@ -510,7 +552,6 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
             self.send_commands()
-
 
     def keyReleaseEvent(self, event):
         """
@@ -687,6 +728,6 @@ def main():
     main_window.show()
     sys.exit(app.exec_())
 
+
 if __name__ == "__main__":
     main()
-
