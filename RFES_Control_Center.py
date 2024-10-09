@@ -29,7 +29,8 @@ pathlib.PosixPath = pathlib.WindowsPath
 
 # GLOBAL VARIABLES
 
-HOST = "169.254.196.32"  # The server's hostname or IP address
+HOST = "10.42.0.1"
+# HOST = "169.254.196.32"  # The server's hostname or IP address
 # Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
