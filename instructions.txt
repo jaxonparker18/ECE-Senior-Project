@@ -32,7 +32,7 @@
 // 10.1 inches for 1
 //backward(1)
 
-// PATROLING CHAIR
+// PATROLLING CHAIR
 //left 90 deg
 //forward 24 inches
 //right 90 deg

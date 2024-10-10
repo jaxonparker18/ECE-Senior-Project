@@ -48,6 +48,7 @@ DC = 'x'
 # thread stop flags
 video_stop_flag = threading.Event()
 recv_stop_flag = threading.Event()
+script_stop_flag = threading.Event()
 
 
 class VideoThreadPiCam(QThread):
@@ -189,6 +190,7 @@ class MainWindow(QWidget):
         self.coms_thread = None
         self.recv_thread = None
         self.run_instr_thread = None
+
 
         # mouse track
         self.is_tracking_mouse = False
@@ -402,24 +404,63 @@ class MainWindow(QWidget):
         :param instructions_path: file path
         """
         # NEEDS TO BE A ASYNC SINCE THIS HAS DELAY
+        delay_between_commands = 0.1
+
+        loop = 0
+        in_loop_block = False
+        execute_loop = False
+        is_infinite_loop = False
+        instructions_to_loop = []
+
         instructions = Instructions_Reader.path_to_instructions(instructions_path)  # "["forward(10)", "left(90)", ...]"
         for instruction in instructions:
-            inst = Instructions_Reader.instruction_as_tuple(instruction)    # "("forward", "10")"
-            command = inst[0]           # forward
-            value = float(inst[1])      # 10
-            self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-            self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
-            self.send_commands()
-            # print("DOING: " + str(self.keys))
-            if command in ["aim_left", "aim_right", "aim_up", "aim_down"]: # if it's aiming, turn value to degrees
-                # convert value to angle, so use value to see how long it takes to turn a certain angle
-                time.sleep(value)   # right now it is still value as seconds
-            else:
-                time.sleep(value)   # value is treated as seconds
-            self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-            self.send_commands()
-            time.sleep(0.1)
+            if script_stop_flag.is_set():
+                break
+            inst = Instructions_Reader.instruction_as_tuple(instruction)  # "("forward", "10")"
+            command = inst[0]  # forward
+            value = inst[1]  # 10
 
+            if not in_loop_block and command == "for":
+                if value == "-":
+                    is_infinite_loop = True
+                else:
+                    loop = int(value)
+                in_loop_block = True
+                continue
+            elif in_loop_block and command != "end":
+                instructions_to_loop.append(inst)
+                continue
+            elif in_loop_block and command == "end":
+                execute_loop = True
+                in_loop_block = False
+            if execute_loop:
+                i = 0
+                while i < loop and not script_stop_flag.is_set():
+                    for ins in instructions_to_loop:
+                        if script_stop_flag.is_set():   # stop thread
+                            break
+                        command = ins[0]  # forward
+                        value = float(ins[1])  # 10
+                        self.send_script_instructions(command, value, delay_between_commands)
+                    if not is_infinite_loop:
+                        i += 1
+                execute_loop = False
+            else:
+                value = float(value)  # 10
+                self.send_script_instructions(command, value, delay_between_commands)
+
+    def send_script_instructions(self, command, value, delay_between_commands):
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
+        self.send_commands()
+        if command in ["aim_left", "aim_right", "aim_up", "aim_down"]:  # if it's aiming, turn value to degrees
+            # convert value to angle, so use value to see how long it takes to turn a certain angle
+            time.sleep(value)  # right now it is still value as seconds
+        else:
+            time.sleep(value)  # value is treated as seconds
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.send_commands()
+        time.sleep(delay_between_commands)
 
     def display_disconnected(self):
         """
