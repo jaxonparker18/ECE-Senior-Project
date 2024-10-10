@@ -131,10 +131,10 @@ class ScriptWindow(QWidget):
         self.main_window.add_to_logger(text)
 
     def toggle_script_window(self):
-        self.main_window.on_write_script()
+        self.main_window.toggle_write_script()
 
     def toggle_log_window(self):
-        self.main_window.on_logger()
+        self.main_window.toggle_logger()
 
 
 class LogWindow(QWidget):
@@ -184,10 +184,10 @@ class LogWindow(QWidget):
         logs_l.addWidget(self.logger)
 
     def toggle_log_window(self):
-        self.main_window.on_logger()
+        self.main_window.toggle_logger()
 
     def toggle_script_window(self):
-        self.main_window.on_write_script()
+        self.main_window.toggle_write_script()
 
     def log(self, side, message):
         """
@@ -260,22 +260,20 @@ class MainWindow(QMainWindow):
         open_script_action.setShortcut(Qt.CTRL + Qt.Key_O)
 
         # QAction for write script.
-        open_write_script_action = QAction(QIcon("controller.png"), "Write Script", self)
+        open_write_script_action = QAction(QIcon("controller.png"), "Write Script (Ctrl + S)", self)
         open_write_script_action.setStatusTip("Opens field to write custom RFES language script.")
         open_write_script_action.triggered.connect(self.on_write_script)
-        open_write_script_action.setShortcut(Qt.CTRL + Qt.Key_S)
+        open_write_script_action.setShortcut("Ctrl+S")
 
         # QAction for logger.
-        open_logger_action = QAction(QIcon("controller.png"), "Open Log", self)
+        open_logger_action = QAction(QIcon("controller.png"), "Open Log (Ctrl + L)", self)
         open_logger_action.setStatusTip("Opens logger to see updated information.")
         open_logger_action.triggered.connect(self.on_logger)
-        open_logger_action.setShortcut(Qt.CTRL + Qt.Key_L)
+        open_logger_action.setShortcut("Ctrl+L")
 
         # Initialize StatusBar and MenuBar
         status_bar = self.statusBar()
         status_bar.setStyleSheet(stylesheets.STATUS_BAR)
-        # self.setStatusBar(status_bar)
-
         menu = self.menuBar()
 
         # MenuBar Setup
@@ -291,14 +289,18 @@ class MainWindow(QMainWindow):
     def on_open_script(self):
         # BROWSE FILES AND PRINT CONTENT OF FILE
         try:
-            filename = QFileDialog.getOpenFileName(self, 'Open File', 'C:/Users/Owner/Desktop', 'TXT Files (*.txt)')
+            filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
             content = open(filename[0]).read()
-            print("Reading from file: " + filename[0])
-            print(content)
+            self.scriptWindow.show()
+            self.scriptWindow.textBox.clear()
+            self.scriptWindow.textBox.setText(content)
         except Exception as e:
-            print("Error: " + str(e))
+            self.add_to_logger("Open error: " + str(e))
 
     def on_write_script(self):
+        self.scriptWindow.show()
+
+    def toggle_write_script(self):
         if self.scriptWindow.isVisible():
             self.scriptWindow.hide()
         else:
@@ -306,6 +308,9 @@ class MainWindow(QMainWindow):
             self.scriptWindow.textBox.clear()
 
     def on_logger(self):
+        self.logWindow.show()
+
+    def toggle_logger(self):
         if self.logWindow.isVisible():
             self.logWindow.hide()
         else:
@@ -315,7 +320,6 @@ class MainWindow(QMainWindow):
         self.logWindow.log(0, text)
 
     def top_bar(self):
-
         # Line
         line = QLabel()
         line.setFixedSize(self.screen.width(), 3)
@@ -326,7 +330,6 @@ class MainWindow(QMainWindow):
         self.top_bar_layout = QHBoxLayout()
         self.top_bar_widget.setLayout(self.top_bar_layout)
         self.top_bar_widget.setStyleSheet(stylesheets.TOP_BAR)
-        # self.top_bar_widget.setStyleSheet("border: 3px solid black;")     # comment when done
         self.top_bar_layout.setSpacing(0)
         self.top_bar_layout.setContentsMargins(15, 2, 0, 3)
         self.main_layout.addWidget(self.top_bar_widget)
@@ -420,7 +423,6 @@ def main():
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
     app = QApplication(sys.argv)
-    # global main_window
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec_())
