@@ -357,7 +357,8 @@ class MainWindow(QWidget):
             self.log(CLIENT, "Connecting to server...")
             self.socket = socket(AF_INET, SOCK_STREAM)
             try:
-                self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
+                threading.Thread(target=self.socket.connect, args=(self.ip_entry.text(), int(self.port_entry.text())))
+                # self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
                 self.log(SERVER, self.recv_data())
                 self.recv_thread = threading.Thread(target=self.log_data, args=())
                 self.recv_thread.start()
@@ -698,7 +699,6 @@ class MainWindow(QWidget):
         self.c_d_button.setFont(QFont("sans serif", 12))
         self.c_d_button.setFixedSize(200, 40)
         self.c_d_button.clicked.connect(self.connect_to_server)
-
         # click only focus
         self.c_d_button.setFocusPolicy(Qt.ClickFocus)
 
