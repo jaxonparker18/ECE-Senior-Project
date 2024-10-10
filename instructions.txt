@@ -19,12 +19,42 @@
 // aim_up(90) where 90 is the angle to turn
 //
 
-// PATROL
-forward(3)
-left(1)
-forward(3)
-left(1)
-forward(3)
-left(1)
-forward(3)
-left(1)
+// 360 is 3.025 for RIGHT
+// 90 is
+//right(1.5125)
+
+// 360 is 2.88s for LEFT
+//left(2.88)
+
+// 9.65 inches for 1
+//forward(1)
+
+// 10.1 inches for 1
+//backward(1)
+
+// PATROLING CHAIR
+//left 90 deg
+//forward 24 inches
+//right 90 deg
+// forward 56 inches
+// right 90
+// forward 56 inches
+// right 90
+// forward 56 inches
+// right 90
+// forward 24 inches
+// right 90
+
+left(0.72)
+forward(2.48705)
+right(0.756)
+forward(5.80311)
+right(0.756)
+forward(5.80311)
+right(0.756)
+forward(5.80311)
+right(0.756)
+forward(5.80311)
+right(0.756)
+forward(2.48705)
+right(0.756)

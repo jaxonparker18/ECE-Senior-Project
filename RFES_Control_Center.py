@@ -393,7 +393,7 @@ class MainWindow(QWidget):
         Starts the run_instr thread to run instrucitons.
         """
         instructions_path = "instructions.txt"  # should be from a field
-        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=instructions_path)
+        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,))
         self.run_instr_thread.start()
 
     def execute_instructions(self, instructions_path):
@@ -407,14 +407,19 @@ class MainWindow(QWidget):
             inst = Instructions_Reader.instruction_as_tuple(instruction)    # "("forward", "10")"
             command = inst[0]           # forward
             value = float(inst[1])      # 10
-            self.keys = OFF_KEYS
+            self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
             self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
             self.send_commands()
+            # print("DOING: " + str(self.keys))
             if command in ["aim_left", "aim_right", "aim_up", "aim_down"]: # if it's aiming, turn value to degrees
                 # convert value to angle, so use value to see how long it takes to turn a certain angle
                 time.sleep(value)   # right now it is still value as seconds
             else:
                 time.sleep(value)   # value is treated as seconds
+            self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+            self.send_commands()
+            time.sleep(0.1)
+
 
     def display_disconnected(self):
         """
@@ -552,6 +557,9 @@ class MainWindow(QWidget):
                 self.keys[7] = '1'
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
+            if key == Qt.Key_I:
+                print("running")
+                self.run_instructions()
             self.send_commands()
 
     def keyReleaseEvent(self, event):
