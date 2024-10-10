@@ -46,13 +46,100 @@ video_stop_flag = threading.Event()
 recv_stop_flag = threading.Event()
 
 
+class VideoThreadPiCam(QThread):
+    """
+    Thread class to run the camera on a different thread.
+    """
+
+    change_pixmap_signal = pyqtSignal(np.ndarray)
+
+    def __init__(self, parent, status, host, port):
+        """
+        Constructs the thread.
+        :param parent: invoker of thread.
+        :param status: connection status, connected/disconnected
+        :param host: the host of the server, (ip address)
+        :param port: the port number
+        """
+
+        super().__init__(parent)
+        self.connected = status
+        self.client_socket = None
+        self.host = host
+        self.port = port
+        self.grab_frame = True
+        self.x = 0
+
+    def run(self):
+        """
+        Runs the thread by connecting to the TCP socket receiving frames in bytes and decoding it
+        using cv2, then displaying it onto the window.
+        """
+
+        BUFF_SIZE = 65536
+        addr = (self.host, self.port)
+        self.client_socket = socket(AF_INET, SOCK_STREAM)
+        self.client_socket.connect(addr)
+        buffer = b''
+        # OBJ DETECT
+        # model = torch.hub.load(r'D:\Documents\UoU\Spring24\ECE3992\ECE-Senior-Project\yolov5', 'custom', source='local', path='fire_v5n50e.pt', force_reload=True)
+        # circle attr
+        radius = 3
+        thickness = -1
+        color = (255, 0, 0)
+        while not video_stop_flag.is_set():
+            try:
+                packet = self.client_socket.recv(BUFF_SIZE)
+                buffer += packet
+                while b'\0' in buffer:
+                    # start = time.time()
+                    message, buffer = buffer.split(b'\0', 1)
+                    data = base64.b64decode(message)
+                    frame = np.frombuffer(data, dtype=np.uint8)
+                    frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+
+                    # OBJ DETECTION
+                    # frame = cv2.resize(frame, (640, 480)) # (1920, 1080) (640, 480)
+                    # results = model(frame)
+                    # frame = np.squeeze(results.render())
+                    # # x1(pixels), y1(pixels), x2(pixels), y2(pixels), confidence, class
+                    # # print(results.xyxy)
+                    # if len(results.xyxy[0]) > 0:
+                    #     x1 = results.xyxy[0][0][0]
+                    #     y1 = results.xyxy[0][0][1]
+                    #     x2 = results.xyxy[0][0][2]
+                    #     y2 = results.xyxy[0][0][3]
+                    #
+                    #     mid_x = (x1 + x2) / 2
+                    #     mid_y = (y1 + y2) / 2
+                    #
+                    #     center_coordinate = (int(mid_x), int(mid_y))
+                    #     frame = cv2.circle(frame, center_coordinate, radius, color, thickness)
+
+                    self.change_pixmap_signal.emit(frame)
+
+                    # FPS CHECK
+                    # stop = time.time()
+                    # print(str(stop-start), "ms")
+            except Exception as e:
+                pass
+                # print(e)
+        self.client_socket.close()
+
+
 class ScriptWindow(QWidget):
-    def __init__(self, main_window, screen):
+    def __init__(self, main_window, log_window):
         super().__init__()
         self.main_window = main_window
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
-        self.setGeometry(screen.width() - 418, screen.height() - 425, 400, 300)
-        self.setMinimumSize(400, 300)
+        self.width = 400
+        self.height = 300
+        # self.setGeometry(main_window.screen.width() - 418, main_window.screen.height() - 425, 400, 300) # hard code
+        self.setGeometry(log_window.geometry().topRight().x() - self.width + 23,    # 23 is offset
+                         log_window.geometry().topLeft().y() + log_window.geometry().height() + 125,
+                         self.width,
+                         self.height)
+        self.setMinimumSize(self.width, self.height)
         self.setWindowTitle("Script Editor")
 
         self.shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
@@ -138,12 +225,12 @@ class ScriptWindow(QWidget):
 
 
 class LogWindow(QWidget):
-    def __init__(self, main_window, screen):
+    def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
-
-        self.setGeometry(screen.width() - 340, screen.height() - 960, 300, 400)
-
+        self.width = 300
+        self.height = 400
+        self.setGeometry(main_window.screen.width() - 335, main_window.screen.height() - 960, self.width, self.height)
         self.shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         self.shortcut.activated.connect(self.toggle_log_window)
 
@@ -174,7 +261,7 @@ class LogWindow(QWidget):
         logs_l.addWidget(logs_top_w)
 
         self.logger = QTextBrowser(self)
-        self.logger.setMinimumSize(300, 400)
+        self.logger.setMinimumSize(self.width, self.height)
         self.logger.setReadOnly(True)
         self.logger.setFocusPolicy(Qt.NoFocus)
 
@@ -217,7 +304,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("RFES Control Center")
         self.screen = QDesktopWidget().screenGeometry()
-        self.setGeometry(0, 0, self.screen.width(), self.screen.height())
+        # self.setGeometry(0, 0, self.screen.width(), self.screen.height())
         self.showMaximized()
         self.setWindowIcon(QIcon('res/rfes_icon.png'))
 
@@ -250,8 +337,9 @@ class MainWindow(QMainWindow):
         self.top_bar()
         self.main_feed()
 
-        self.scriptWindow = ScriptWindow(self, self.screen)
-        self.logWindow = LogWindow(self, self.screen)
+        self.log_window = LogWindow(self)
+        self.script_window = ScriptWindow(self, self.log_window)
+
 
         # QAction for open txt script.
         open_script_action = QAction(QIcon("controller.png"), "Open Script", self)
@@ -286,38 +374,47 @@ class MainWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
 
+
+    def mousePressEvent(self, event):
+        """
+        Gets the position of the mouse when it is clicked. For debugging purposes.
+        :param event: action occurred
+        :return: prints the coordinates of the mouse click
+        """
+        print('Mouse coords: ( %d : %d )' % (event.x(), event.y()))
+
     def on_open_script(self):
         # BROWSE FILES AND PRINT CONTENT OF FILE
         try:
             filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
             content = open(filename[0]).read()
-            self.scriptWindow.show()
-            self.scriptWindow.textBox.clear()
-            self.scriptWindow.textBox.setText(content)
+            self.script_window.show()
+            self.script_window.textBox.clear()
+            self.script_window.textBox.setText(content)
         except Exception as e:
             self.add_to_logger("Open error: " + str(e))
 
     def on_write_script(self):
-        self.scriptWindow.show()
+        self.script_window.show()
 
     def toggle_write_script(self):
-        if self.scriptWindow.isVisible():
-            self.scriptWindow.hide()
+        if self.script_window.isVisible():
+            self.script_window.hide()
         else:
-            self.scriptWindow.show()
-            self.scriptWindow.textBox.clear()
+            self.script_window.show()
+            self.script_window.textBox.clear()
 
     def on_logger(self):
-        self.logWindow.show()
+        self.log_window.show()
 
     def toggle_logger(self):
-        if self.logWindow.isVisible():
-            self.logWindow.hide()
+        if self.log_window.isVisible():
+            self.log_window.hide()
         else:
-            self.logWindow.show()
+            self.log_window.show()
 
     def add_to_logger(self, text):
-        self.logWindow.log(0, text)
+        self.log_window.log(0, text)
 
     def top_bar(self):
         # Line
@@ -416,6 +513,10 @@ class MainWindow(QMainWindow):
         self.feed.setPixmap(QPixmap("res/samplefeed.jpg"))
         self.feed.setAlignment(Qt.AlignCenter)
         self.center_layout.addWidget(self.feed)
+
+        t = QLabel()
+        t.setPixmap(QPixmap("res/test_hud.png"))
+        t.move(QPoint(100, 100))
 
 
 def main():

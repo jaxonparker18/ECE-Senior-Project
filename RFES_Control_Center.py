@@ -221,7 +221,7 @@ class MainWindow(QWidget):
         self.TL_layout.setAlignment(Qt.AlignLeft)
         self.TL_widget.setLayout(self.TL_layout)
 
-        # Top panel, right side ( STATUS)
+        # Top panel, right side (STATUS)
         self.TR_widget = QWidget()
         self.TR_layout = QVBoxLayout()
         self.TR_layout.setAlignment(Qt.AlignRight)
@@ -639,7 +639,6 @@ class MainWindow(QWidget):
         self.port_entry.setText(self.defaultPort)
         self.port_entry.setFont(QFont("sans serif", 12))
         TL_R_layout.addWidget(self.port_entry)
-
         self.TL_layout.addWidget(TL_R_widget)
 
     def create_connect_disconnect_panel(self):
