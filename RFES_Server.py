@@ -13,13 +13,15 @@ import numpy as np
 import imutils
 import io
 import struct
+
 # PI EXCLUSIVE
 import serial
-from gpiozero import Motor, Servo, PWMLED, LED
+from gpiozero import Motor, Servo, PWMLED, LED, InputDevice
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
 from rpi_hardware_pwm import HardwarePWM
+import PiBatteryIndicator
 
 
 class UpdateServoThread(threading.Thread):
@@ -35,7 +37,7 @@ class UpdateServoThread(threading.Thread):
         self.current_pwm_val = pwm_val
         self.pwm_max = pwm_max
         self.pwm_min = pwm_min
-        self.increment = 0.0001
+        self.increment = 0.0005
 
     def run(self):
         """
@@ -74,9 +76,9 @@ OFF = "0"
 DC = "x"
 
 # UART - DEPRECIATED
-serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
-baud_rate = 115200
-ser = serial.Serial(serial_port, baud_rate)
+# serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
+# baud_rate = 115200
+# ser = serial.Serial(serial_port, baud_rate)
 
 # GPIO MOTOR
 left_motor = Motor("BOARD11", "BOARD13")
@@ -88,7 +90,7 @@ right_motor = Motor("BOARD18", "BOARD16")
 PWM_Y_MAX = 10
 PWM_Y_MIN = 5
 PWM_Y_MID = 7.5
-pwm_y = HardwarePWM(pwm_channel=2, hz=50, chip=2)
+pwm_y = HardwarePWM(pwm_channel=0, hz=50, chip=0)
 current_pwm_y = PWM_Y_MID
 pwm_y.start(current_pwm_y)
 move_y_thread = None
@@ -96,7 +98,7 @@ move_y_thread = None
 PWM_X_MAX = 10.4
 PWM_X_MIN = 7.5
 PWM_X_MID = 9.3
-pwm_x = HardwarePWM(pwm_channel=3, hz=50, chip=2)
+pwm_x = HardwarePWM(pwm_channel=1, hz=50, chip=0)
 current_pwm_x = PWM_X_MID
 pwm_x.start(current_pwm_x)
 move_x_thread = None
@@ -104,6 +106,13 @@ move_x_thread = None
 # PUMP
 pump = LED("BOARD15")
 pump.off()
+
+# WL SENSORS
+wl_five = InputDevice("BOARD26")
+wl_four = InputDevice("BOARD24")
+wl_three = InputDevice("BOARD23")
+wl_two = InputDevice("BOARD21")
+wl_one = InputDevice("BOARD19")
 
 # SERVER
 client_socket = None
@@ -177,6 +186,7 @@ def set_motor(left_speed, right_speed):
         left_motor.stop()
     elif left_speed > 0:
         left_motor.forward(left_speed)
+        print("forward")
     else:
         left_motor.backward(abs(left_speed))
 
@@ -372,16 +382,48 @@ def execute_commands(bits):
         send_to_client("ERROR OCCURED: " + repr(e))
 
 
+def update_pi_battery(pi_battery):
+    while True:
+        send_to_client("/D" + str(pi_battery.getPercentage()))
+        time.sleep(5)
+
+
+def update_water_level():
+    while True:
+        level = "00000"
+        if not wl_five.is_active:
+            level[4] = "1"
+        if not wl_four.is_active:
+            level[3] = "1"
+        if not wl_three.is_active:
+            level[2] = "1"
+        if not wl_two.is_active:
+            level[1] = "1"
+        if not wl_one.is_active:
+            level[0] = "1"
+        send_to_client("/D" + str(level))
+        time.sleep(2)
+
+
 def handle_commands():
     """
     Establishes handshake with TCP Client and listens to any commands sent from the client.
     """
+
     global client_socket
     while True:
         try:
             client_socket, tcp_address = commands_socket.accept()
             print(f"Command center connected at {tcp_address}.")
             send_to_client("Connection established.")
+            # start pi_battery thread
+            pi_battery = PiBatteryIndicator.INA219(addr=0x41)
+            pi_battery_thread = threading.Thread(target=update_pi_battery, args=(pi_battery,))
+            pi_battery_thread.start()
+
+            # start water_level thread
+            water_level_thread = threading.Thread(target=update_water_level, args=())
+            water_level_thread.start()
             while True:
                 try:
                     # data = client_socket.recv(1024) # , MSG_WAITALL
@@ -396,6 +438,8 @@ def handle_commands():
                 except KeyboardInterrupt:
                     print("Commands disconnected from control center: Keyboard Interrupt exception")
                     client_socket.close()
+                    pi_battery_thread.join()
+                    water_level_thread.join()
                     sys.exit(0)
                 # except:
                 #    print("Commands disconnected from control center: Failed to receive exception")
@@ -404,6 +448,8 @@ def handle_commands():
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             client_socket.close()
+            pi_battery_thread.join()
+            water_level_thread.join()
             sys.exit(0)
 
 
@@ -438,10 +484,7 @@ def handle_video():
 
 BUFF_SIZE = 65536
 
-HOST = "169.254.196.32"
-# HOST = "172.20.10.7"
-# HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
-# Pi server = 172.20.10.3 / 10.42.0.1
+HOST = "10.42.0.1"  # Standard loopback interface address (localhost)
 
 # COMMANDS SOCKET
 commands_port = 2100  # Port to listen on (non-privileged ports are > 1023)

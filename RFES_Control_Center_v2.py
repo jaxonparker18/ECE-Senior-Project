@@ -28,8 +28,6 @@ import struct
 
 # GLOBAL VARIABLES
 HOST = "10.42.0.1"
-# HOST = "169.254.196.32"  # The server's hostname or IP address
-# Pi server = 172.20.10.3
 PORT = 2100  # The port used by the server, must be >= 1024
 
 # constants
@@ -365,6 +363,21 @@ class MainWindow(QMainWindow):
         self.feed = None
 
         self.socket = None
+
+        self.pi_battery = "0.00%"
+
+        # where "1, 2, 3, 4, 5"
+        self.water_level = "00000"
+        self.wl_full = QPixmap("res/water_level/full_status.png")
+        self.wl_down_one = QPixmap("res/water_level/down_one.png")
+        self.wl_down_two = QPixmap("res/water_level/down_two.png")
+        self.wl_down_three = QPixmap("res/water_level/down_three.png")
+        self.wl_down_four = QPixmap("res/water_level/down_four.png")
+        self.wl_empty_text = QPixmap("res/water_level/empty_with_text.png")
+        self.wl_empty_no_text = QPixmap("res/water_level/empty_without_text.png")
+        self.curr_wl = self.wl_empty_text
+        self.mt_counter = 0
+
         self.feed_thread = None
         self.coms_thread = None
         self.recv_thread = None
@@ -600,12 +613,20 @@ class MainWindow(QMainWindow):
 
         while True:
             try:
-                data = self.recv_data()
-                # set self.feed_thread.x to update to new ch pos
-                # if data is about servo movement, move the image instead.
-                recv_thread = LoggerThread(self, SERVER, data)
-                recv_thread.update_signal.connect(self.log)
-                recv_thread.start()
+                data = str(self.recv_data())
+
+                # filter data
+                if data.startswith("/WL"):
+                    self.water_level = data[3:]
+                    continue
+                elif data.startswith("/PIB"):
+                    self.pi_battery = data[4:]
+                else:
+                    # set self.feed_thread.x to update to new ch pos
+                    # if data is about servo movement, move the image instead.
+                    recv_thread = LoggerThread(self, SERVER, data)
+                    recv_thread.update_signal.connect(self.log)
+                    recv_thread.start()
             except:
                 print("server closed")
                 break
@@ -633,17 +654,14 @@ class MainWindow(QMainWindow):
 
             self.status = "CONNECTED"
             self.update_status()
-            print("2")
             # Creates a new thread for the camera
             video_stop_flag.clear()  # resets flag
             self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
                 self.port_entry.text()) + 1)
-            print("3")
             # connect its signal to the update_image slot
             self.feed_thread.change_pixmap_signal.connect(self.update_image)
             # start the thread
             self.feed_thread.start()
-            print("4")
             self.update()
 
         else:
@@ -662,13 +680,50 @@ class MainWindow(QMainWindow):
         """
 
         if self.status == "CONNECTED":
-            display_img = cv_img
-            qt_img = self.convert_cv_qt(display_img)
+            qt_img = self.convert_cv_qt(cv_img)
+            self.update_water_indicator()
+            water_level = self.curr_wl.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.overlay_pixmaps(qt_img, water_level, self.display_width - 390, 25)
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
         else:
             self.feed.setPixmap(QPixmap("res/not_connected.png"))
             self.update()
+
+    def update_water_indicator(self):
+        if self.water_level == "00000":
+            if self.mt_counter >= 22:
+                if self.curr_wl == self.wl_empty_no_text:
+                    self.curr_wl = self.wl_empty_text
+                    self.mt_counter = 0
+                else:
+                    self.curr_wl = self.wl_empty_no_text
+                    self.mt_counter = 0
+            self.mt_counter += 1
+        else:
+            if self.water_level[0] == "1":
+                self.curr_wl = self.wl_down_one
+                if self.water_level[1] == "1":
+                    self.curr_wl = self.wl_down_two
+                    if self.water_level[2] == "1":
+                        self.curr_wl = self.wl_down_three
+                        if self.water_level[3] == "1":
+                            self.curr_wl = self.wl_down_four
+                            if self.water_level[4] == "1":
+                                self.curr_wl = self.wl_full
+
+    def overlay_pixmaps(self, base_pixmap, overlay_pixmap, x=0, y=0):
+        # Create a QPainter to paint on the base pixmap
+        painter = QPainter(base_pixmap)
+
+        # Draw the overlay pixmap on top of the base pixmap
+        painter.drawPixmap(x, y, overlay_pixmap)
+
+        # End the QPainter to save the changes
+        painter.end()
+
+        # Return the modified base pixmap
+        return base_pixmap
 
     def convert_cv_qt(self, cv_img):
         """
