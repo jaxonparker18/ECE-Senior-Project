@@ -11,8 +11,10 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import *
 import ctypes
+
 import res.Stylesheets as stylesheets
 import res.Fonts as fonts
+import Instructions_Reader
 
 import cv2
 import torch
@@ -44,6 +46,7 @@ DC = 'x'
 # thread stop flags
 video_stop_flag = threading.Event()
 recv_stop_flag = threading.Event()
+script_stop_flag = threading.Event()
 
 
 class VideoThreadPiCam(QThread):
@@ -127,6 +130,33 @@ class VideoThreadPiCam(QThread):
         self.client_socket.close()
 
 
+class LoggerThread(QThread):
+    """
+    Thread that updates the Log window with information.
+    """
+
+    update_signal = pyqtSignal(int, str)
+
+    def __init__(self, parent, side, message):
+        """
+        Constructs the thread to display message on Log window.
+        :param parent: invoker of thread
+        :param side: the side of which the message is sent, client or server
+        :param message: message to write to Log window
+        """
+
+        super().__init__(parent)
+        self.side = side
+        self.message = message
+
+    def run(self):
+        """
+        Emits the signal by sending the message
+        """
+
+        self.update_signal.emit(self.side, self.message)
+
+
 class ScriptWindow(QWidget):
     def __init__(self, main_window, log_window):
         super().__init__()
@@ -203,7 +233,7 @@ class ScriptWindow(QWidget):
             content = open(filename[0]).read()
             self.textBox.setText(content)
         except Exception as e:
-            self.main_window.add_to_logger("Open error: " + str(e))
+            self.main_window.log("Open error: " + str(e))
 
     def on_save_script(self):
         try:
@@ -211,11 +241,11 @@ class ScriptWindow(QWidget):
             with open(filename, 'w') as file:
                 file.write(self.textBox.toPlainText())
         except Exception as e:
-            self.main_window.add_to_logger("Save error: " + str(e))
+            self.main_window.log("Save error: " + str(e))
 
     def on_push_script(self):
         text = self.textBox.toPlainText()
-        self.main_window.add_to_logger(text)
+        self.main_window.log(text)
 
     def toggle_script_window(self):
         self.main_window.toggle_write_script()
@@ -242,6 +272,8 @@ class LogWindow(QWidget):
 
         logs_l = QVBoxLayout()
         self.setLayout(logs_l)
+        self.clearFocus()
+        self.setFocusPolicy(Qt.NoFocus)
 
         # TOP ROW OF LOGS
         logs_top_w = QWidget()
@@ -269,6 +301,12 @@ class LogWindow(QWidget):
         self.logger.setText("Welcome to RFES Control Center.")
         self.logger.setContentsMargins(5, 0, 0, 5)
         logs_l.addWidget(self.logger)
+
+    def keyPressEvent(self, event):
+        self.main_window.keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        self.main_window.keyReleaseEvent(event)
 
     def toggle_log_window(self):
         self.main_window.toggle_logger()
@@ -308,6 +346,10 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         self.setWindowIcon(QIcon('res/rfes_icon.png'))
 
+        self.display_width = 1920
+        self.display_height = 1080
+
+        # main
         self.top_bar_widget = None
         self.top_bar_layout = None
         self.center_widget = None
@@ -321,6 +363,25 @@ class MainWindow(QMainWindow):
 
         # center
         self.feed = None
+
+        self.socket = None
+        self.feed_thread = None
+        self.coms_thread = None
+        self.recv_thread = None
+        self.run_instr_thread = None
+
+        self.defaultIP = str(HOST)
+        self.defaultPort = str(PORT)
+        self.status = "DISCONNECTED"
+
+        self.keys = IDLE
+
+        # mouse track
+        self.is_tracking_mouse = False
+        self.left_screen = 20
+        self.right_screen = 1520
+        self.top_screen = 185
+        self.bot_screen = 1023
 
         # main widget setup
         self.main_widget = QWidget()
@@ -339,7 +400,6 @@ class MainWindow(QMainWindow):
 
         self.log_window = LogWindow(self)
         self.script_window = ScriptWindow(self, self.log_window)
-
 
         # QAction for open txt script.
         open_script_action = QAction(QIcon("controller.png"), "Open Script", self)
@@ -374,14 +434,370 @@ class MainWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
 
+    # def mousePressEvent(self, event):
+    #     """
+    #     Gets the position of the mouse when it is clicked. For debugging purposes.
+    #     :param event: action occurred
+    #     :return: prints the coordinates of the mouse click
+    #     """
+    #     print('Mouse coords: ( %d : %d )' % (event.x(), event.y()))
 
-    def mousePressEvent(self, event):
+    def mouseMoveEvent(self, event):
         """
-        Gets the position of the mouse when it is clicked. For debugging purposes.
-        :param event: action occurred
-        :return: prints the coordinates of the mouse click
+        Tracks the movement of the mouse and bounds mouse to the window screen.
+        :param event: the occuring event
         """
-        print('Mouse coords: ( %d : %d )' % (event.x(), event.y()))
+
+        if self.is_tracking_mouse:
+            pwm_y_max = 10
+            pwm_y_min = 5
+            y = QCursor.pos().y()
+            offset_y = y - self.top_screen  # 0 - 800
+            percent_y = float(offset_y / (self.bot_screen - self.top_screen))
+            percent_y_invert = 1 - percent_y
+            pwm_y_value = ((pwm_y_max - pwm_y_min) * percent_y_invert) + pwm_y_min
+
+            pwm_x_max = 10.4
+            pwm_x_min = 7.5
+            x = QCursor.pos().x()
+            offset_x = x - self.left_screen
+            percent_x = float(offset_x / (self.right_screen - self.left_screen))
+            percent_x_invert = 1 - percent_x  # because of servos
+            pwm_x_value = ((pwm_x_max - pwm_x_min) * percent_x_invert) + pwm_x_min
+
+            if QCursor.pos().y() <= self.top_screen:
+                QCursor.setPos(QPoint(QCursor.pos().x(), self.top_screen))
+            elif QCursor.pos().y() >= self.bot_screen:
+                QCursor.setPos(QPoint(QCursor.pos().x(), self.bot_screen))
+
+            if QCursor.pos().x() >= self.right_screen:
+                QCursor.setPos(QPoint(self.right_screen, QCursor.pos().y()))
+            elif QCursor.pos().x() <= self.left_screen:
+                QCursor.setPos(QPoint(self.left_screen, QCursor.pos().y()))
+
+            self.keys = IDLE.copy()
+            self.keys[9] = str(round(pwm_y_value, 2))
+            self.keys[10] = str(round(pwm_x_value, 2))
+            self.send_commands()
+
+    def keyPressEvent(self, event):
+        """
+        Listens for any key pressed events.
+        :param event: the type of event that occurs
+        """
+
+        key = event.key()
+        if key == Qt.Key_M:
+            if not self.is_tracking_mouse:
+                self.is_tracking_mouse = True
+                self.log(CLIENT, "SWITCHED TO MOUSE CONTROL.")
+            else:
+                self.is_tracking_mouse = False
+                self.log(CLIENT, "SWITCHED TO KEYBOARD CONTROL.")
+
+        if self.status == "DISCONNECTED":
+            return
+
+        self.keys = IDLE.copy()
+        if not event.isAutoRepeat():
+            if key == Qt.Key_W:
+                self.keys[0] = '1'
+            if key == Qt.Key_A:
+                self.keys[1] = '1'
+            if key == Qt.Key_S:
+                self.keys[2] = '1'
+            if key == Qt.Key_D:
+                self.keys[3] = '1'
+            if key == Qt.Key_Space:
+                self.keys[4] = '1'
+            if key == Qt.Key_Up:
+                self.keys[5] = '1'
+            if key == Qt.Key_Down:
+                self.keys[6] = '1'
+            if key == Qt.Key_Left:
+                self.keys[7] = '1'
+            if key == Qt.Key_Right:
+                self.keys[8] = '1'
+            if key == Qt.Key_I:
+                self.run_instructions()
+            self.send_commands()
+
+    def keyReleaseEvent(self, event):
+        """
+        Listens for any key released events.
+        :param event: type of event that occurs
+        """
+
+        if self.status == "DISCONNECTED":
+            return
+
+        key = event.key()
+        self.keys = IDLE.copy()
+        if not event.isAutoRepeat():
+            if key == Qt.Key_W:
+                self.keys[0] = '0'
+            if key == Qt.Key_A:
+                self.keys[1] = '0'
+            if key == Qt.Key_S:
+                self.keys[2] = '0'
+            if key == Qt.Key_D:
+                self.keys[3] = '0'
+            if key == Qt.Key_Space:
+                self.keys[4] = '0'
+            if key == Qt.Key_Up:
+                self.keys[5] = '0'
+            if key == Qt.Key_Down:
+                self.keys[6] = '0'
+            if key == Qt.Key_Left:
+                self.keys[7] = '0'
+            if key == Qt.Key_Right:
+                self.keys[8] = '0'
+            self.send_commands()
+
+    def send_commands(self):
+        """
+        Sends the commands inputted by user to the TCP server.
+        """
+
+        try:
+            # self.socket.sendall((''.join(self.keys)).encode('utf-8'))
+            keys_as_string = str(self.keys)[1: -1].replace(" ", "").replace("'", "").strip()
+            self.send_packed_message(keys_as_string)
+
+        except Exception as e:
+            self.status = "DISCONNECTED"
+            self.log(CLIENT, str(e))
+
+    def send_packed_message(self, message):
+        """
+        Sends the message using the "prefixed with length" protocol.
+        :param message: message to be sent
+        """
+
+        msg_len = len(message)
+        self.socket.sendall(struct.pack("!I", msg_len))
+        self.socket.sendall(message.encode('utf-8'))
+
+    def recv_data(self):
+        """
+        Receives the data coming in following the "prefixed with length protocol.
+        :returns the data that was received
+        """
+
+        raw_msg_len = self.socket.recv(4)  # get length of message
+
+        if not raw_msg_len:
+            return
+
+        msg_len = struct.unpack("!I", raw_msg_len)[0]
+        data = self.socket.recv(msg_len).decode('utf-8')
+        return data
+
+    def log_data(self):
+        """
+        Receives data from TCP server.
+        """
+
+        while True:
+            try:
+                data = self.recv_data()
+                # set self.feed_thread.x to update to new ch pos
+                # if data is about servo movement, move the image instead.
+                recv_thread = LoggerThread(self, SERVER, data)
+                recv_thread.update_signal.connect(self.log)
+                recv_thread.start()
+            except:
+                print("server closed")
+                break
+
+    def connect_to_server(self):
+        """
+        Connects to the server and updates the connection status, logs it
+        """
+
+        self.connect_button.clearFocus()
+        if self.status == "DISCONNECTED":
+            print("connecting")
+            self.log(CLIENT, "Connecting to server...")
+            self.socket = socket(AF_INET, SOCK_STREAM)
+            try:
+                # threading.Thread(target=self.socket.connect, args=(self.ip_entry.text(), int(self.port_entry.text())))
+                self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
+                self.log(SERVER, self.recv_data())
+                self.recv_thread = threading.Thread(target=self.log_data, args=())
+                self.recv_thread.start()
+            except:
+                print("ERROR")
+                self.log(CLIENT, "Connection with RFES cannot be established. Try again.")
+                return
+
+            self.status = "CONNECTED"
+            self.update_status()
+            print("2")
+            # Creates a new thread for the camera
+            video_stop_flag.clear()  # resets flag
+            self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
+                self.port_entry.text()) + 1)
+            print("3")
+            # connect its signal to the update_image slot
+            self.feed_thread.change_pixmap_signal.connect(self.update_image)
+            # start the thread
+            self.feed_thread.start()
+            print("4")
+            self.update()
+
+        else:
+            self.status = "DISCONNECTED"
+            self.log(CLIENT, "Connection closed.")
+            self.update_status()
+            self.socket.close()
+
+            # disables video thread
+            video_stop_flag.set()
+
+    @pyqtSlot(np.ndarray)
+    def update_image(self, cv_img):
+        """
+        Updates the image_label with a new opencv image.
+        """
+
+        if self.status == "CONNECTED":
+            display_img = cv_img
+            qt_img = self.convert_cv_qt(display_img)
+            self.feed.setPixmap(qt_img)
+            self.feed_thread.grab_frame = True
+        else:
+            self.feed.setPixmap(QPixmap("res/not_connected.png"))
+            self.update()
+
+    def convert_cv_qt(self, cv_img):
+        """
+        Convert from an opencv image to QPixmap.
+        """
+
+        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        p = convert_to_Qt_format.scaled(self.display_width, self.display_height)  # Qt.KeepAspectRatio
+        return QPixmap.fromImage(p)
+
+    def run_instructions(self):
+        """
+        Starts the run_instr thread to run instrucitons.
+        """
+        instructions_path = "patrol.txt"  # should be from a field
+        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,))
+        self.run_instr_thread.start()
+
+    def execute_instructions(self, instructions_path):
+        """
+        Executes the instructions file by sending commands to RFES.
+        :param instructions_path: file path
+        """
+        # NEEDS TO BE A ASYNC SINCE THIS HAS DELAY
+        delay_between_commands = 0.1
+
+        loop = 0
+        in_loop_block = False
+        execute_loop = False
+        is_infinite_loop = False
+        instructions_to_loop = []
+        script_stop_flag.clear()
+
+        instructions = Instructions_Reader.path_to_instructions(instructions_path)  # "["forward(10)", "left(90)", ...]"
+        print(instructions)
+        for instruction in instructions:
+            if script_stop_flag.is_set():
+                break
+            inst = Instructions_Reader.instruction_as_tuple(instruction)  # "("forward", "10")"
+            command = inst[0]  # forward
+            value = inst[1]  # 10
+
+            if not in_loop_block and command == "for":
+                if value == "-1":
+                    is_infinite_loop = True
+                    loop = 1
+                else:
+                    loop = int(value)
+                in_loop_block = True
+                continue
+            elif in_loop_block and command != "end":
+                instructions_to_loop.append(inst)
+                continue
+            elif in_loop_block and command == "end":
+                execute_loop = True
+                in_loop_block = False
+            if execute_loop:
+                print(is_infinite_loop)
+                i = 0
+                while i < loop and not script_stop_flag.is_set():
+                    for ins in instructions_to_loop:
+                        if script_stop_flag.is_set():   # stop thread
+                            break
+                        command = ins[0]  # forward
+                        value = float(ins[1])  # 10
+                        self.send_script_instructions(command, value, delay_between_commands)
+                    if not is_infinite_loop:
+                        i += 1
+                execute_loop = False
+            else:
+                value = float(value)  # 10
+                self.send_script_instructions(command, value, delay_between_commands)
+
+    def send_script_instructions(self, command, value, delay_between_commands):
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
+        print(self.keys)
+        self.send_commands()
+        if command in ["aim_left", "aim_right", "aim_up", "aim_down"]:  # if it's aiming, turn value to degrees
+            # convert value to angle, so use value to see how long it takes to turn a certain angle
+            time.sleep(value)  # right now it is still value as seconds
+        else:
+            time.sleep(value)  # value is treated as seconds
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.send_commands()
+        print(self.keys)
+        time.sleep(delay_between_commands)
+
+    def update_status(self):
+        """
+        Updates the status of the connection.
+        """
+
+        if self.status == "DISCONNECTED":
+            self.ip_entry.setReadOnly(False)
+            self.ip_entry.setDisabled(False)
+
+            self.port_entry.setReadOnly(False)
+            self.port_entry.setDisabled(False)
+            self.connect_button.setText("Connect")
+            self.status_label.setText(self.status)
+            self.status_label.setStyleSheet(stylesheets.STATUS_LABEL_DISCONNECTED)
+
+            # kill video thread
+            # video_stop_flag.set()
+            # self.feed_thread.join()
+
+            # GUI update
+            self.feed.setPixmap(QPixmap("res/not_connected.png"))
+            self.update()
+
+        else:
+            self.ip_entry.setReadOnly(True)
+            self.ip_entry.setDisabled(True)
+
+            self.port_entry.setReadOnly(True)
+            self.port_entry.setDisabled(True)
+
+            self.connect_button.setText("Disconnect")
+            self.status_label.setText(self.status)
+            self.status_label.setStyleSheet(stylesheets.STATUS_LABEL_CONNECTED)
+
+            # self.bot_layout.removeWidget(self.feed)
+            # self.feed.setParent(None)
+            # self.bot_layout.insertWidget(0, self.browser)
+            # create the video capture thread
 
     def on_open_script(self):
         # BROWSE FILES AND PRINT CONTENT OF FILE
@@ -392,7 +808,7 @@ class MainWindow(QMainWindow):
             self.script_window.textBox.clear()
             self.script_window.textBox.setText(content)
         except Exception as e:
-            self.add_to_logger("Open error: " + str(e))
+            self.log("Open error: " + str(e))
 
     def on_write_script(self):
         self.script_window.show()
@@ -413,8 +829,8 @@ class MainWindow(QMainWindow):
         else:
             self.log_window.show()
 
-    def add_to_logger(self, text):
-        self.log_window.log(0, text)
+    def log(self, side, text):
+        self.log_window.log(side, text)
 
     def top_bar(self):
         # Line
@@ -438,8 +854,8 @@ class MainWindow(QMainWindow):
         ip_label.setFont(fonts.IP_LABEL)
         self.top_bar_layout.addWidget(ip_label)
         self.ip_entry = QLineEdit()
-        self.ip_entry.setPlaceholderText(HOST)
-        self.ip_entry.setText(HOST)
+        self.ip_entry.setText(self.defaultIP)
+        self.ip_entry.setPlaceholderText(self.defaultIP)
         self.ip_entry.setFixedSize(250, 25)
         self.ip_entry.setFont(fonts.IP_ENTRY)
         self.ip_entry.setStyleSheet(stylesheets.IP_ENTRY)
@@ -456,8 +872,8 @@ class MainWindow(QMainWindow):
         port_label.setFont(fonts.PORT_LABEL)
         self.top_bar_layout.addWidget(port_label)
         self.port_entry = QLineEdit()
-        self.port_entry.setText(str(PORT))
-        self.port_entry.setPlaceholderText(str(PORT))
+        self.port_entry.setText(str(self.defaultPort))
+        self.port_entry.setPlaceholderText(str(self.defaultPort))
         self.port_entry.setFixedSize(130, 25)
         self.port_entry.setFont(fonts.PORT_ENTRY)
         self.port_entry.setStyleSheet(stylesheets.PORT_ENTRY)
@@ -472,16 +888,17 @@ class MainWindow(QMainWindow):
         self.connect_button.setFixedSize(200, 25)
         self.connect_button.setFont(fonts.CONNECT_BUTTON)
         self.connect_button.setStyleSheet(stylesheets.CONNECT_BUTTON)
+        self.connect_button.clicked.connect(self.connect_to_server)
         self.top_bar_layout.addWidget(self.connect_button)
 
         spacer = QSpacerItem(580, 5)
         self.top_bar_layout.addItem(spacer)
 
         # STATUS LABEL
-        self.status_label = QLabel("DISCONNECTED")
+        self.status_label = QLabel(self.status)
         self.status_label.setFixedHeight(20)
         self.status_label.setFont(fonts.STATUS_LABEL)
-        self.status_label.setStyleSheet(stylesheets.STATUS_LABEL)
+        self.status_label.setStyleSheet(stylesheets.STATUS_LABEL_DISCONNECTED)
         self.top_bar_layout.addWidget(self.status_label)
 
         # left align
@@ -509,14 +926,10 @@ class MainWindow(QMainWindow):
         self.feed = QLabel()
         self.feed.setContentsMargins(0, 0, 0, 0)
         self.feed.setStyleSheet(stylesheets.FEED_LABEL)
-        self.feed.setScaledContents(True)
-        self.feed.setPixmap(QPixmap("res/samplefeed.jpg"))
+        self.feed.setFixedSize(self.display_width, self.display_height)
+        self.feed.setPixmap(QPixmap("res/not_connected.png"))
         self.feed.setAlignment(Qt.AlignCenter)
         self.center_layout.addWidget(self.feed)
-
-        t = QLabel()
-        t.setPixmap(QPixmap("res/test_hud.png"))
-        t.move(QPoint(100, 100))
 
 
 def main():

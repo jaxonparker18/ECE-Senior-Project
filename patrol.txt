@@ -1,6 +1,7 @@
 // This script instructs the robot to patrol
 
-for(5)
-forward(1)
-right(1)
+for(-1)
+left(0.72)
+forward(2)
+spray(0.75)
 end

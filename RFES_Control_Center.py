@@ -191,7 +191,6 @@ class MainWindow(QWidget):
         self.recv_thread = None
         self.run_instr_thread = None
 
-
         # mouse track
         self.is_tracking_mouse = False
         self.left_screen = 20
@@ -357,8 +356,8 @@ class MainWindow(QWidget):
             self.log(CLIENT, "Connecting to server...")
             self.socket = socket(AF_INET, SOCK_STREAM)
             try:
-                threading.Thread(target=self.socket.connect, args=(self.ip_entry.text(), int(self.port_entry.text())))
-                # self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
+                # threading.Thread(target=self.socket.connect, args=(self.ip_entry.text(), int(self.port_entry.text())))
+                self.socket.connect((self.ip_entry.text(), int(self.port_entry.text())))
                 self.log(SERVER, self.recv_data())
                 self.recv_thread = threading.Thread(target=self.log_data, args=())
                 self.recv_thread.start()
@@ -395,7 +394,7 @@ class MainWindow(QWidget):
         """
         Starts the run_instr thread to run instrucitons.
         """
-        instructions_path = "instructions.txt"  # should be from a field
+        instructions_path = "patrol.txt"  # should be from a field
         self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,))
         self.run_instr_thread.start()
 
@@ -412,8 +411,10 @@ class MainWindow(QWidget):
         execute_loop = False
         is_infinite_loop = False
         instructions_to_loop = []
+        script_stop_flag.clear()
 
         instructions = Instructions_Reader.path_to_instructions(instructions_path)  # "["forward(10)", "left(90)", ...]"
+        print(instructions)
         for instruction in instructions:
             if script_stop_flag.is_set():
                 break
@@ -422,8 +423,9 @@ class MainWindow(QWidget):
             value = inst[1]  # 10
 
             if not in_loop_block and command == "for":
-                if value == "-":
+                if value == "-1":
                     is_infinite_loop = True
+                    loop = 1
                 else:
                     loop = int(value)
                 in_loop_block = True
@@ -435,6 +437,7 @@ class MainWindow(QWidget):
                 execute_loop = True
                 in_loop_block = False
             if execute_loop:
+                print(is_infinite_loop)
                 i = 0
                 while i < loop and not script_stop_flag.is_set():
                     for ins in instructions_to_loop:
@@ -453,6 +456,7 @@ class MainWindow(QWidget):
     def send_script_instructions(self, command, value, delay_between_commands):
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
+        print(self.keys)
         self.send_commands()
         if command in ["aim_left", "aim_right", "aim_up", "aim_down"]:  # if it's aiming, turn value to degrees
             # convert value to angle, so use value to see how long it takes to turn a certain angle
@@ -461,6 +465,7 @@ class MainWindow(QWidget):
             time.sleep(value)  # value is treated as seconds
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.send_commands()
+        print(self.keys)
         time.sleep(delay_between_commands)
 
     def display_disconnected(self):
@@ -600,7 +605,6 @@ class MainWindow(QWidget):
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
             if key == Qt.Key_I:
-                print("running")
                 self.run_instructions()
             self.send_commands()
 

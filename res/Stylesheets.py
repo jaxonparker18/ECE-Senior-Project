@@ -22,11 +22,17 @@ CONNECT_BUTTON = "QPushButton {"\
                  "}"\
                  "QPushButton::pressed {"\
                     "background-color: rgb(100, 100, 100);"\
+                 "}" \
+                 "QPushButton:hover:!pressed"\
+                 "{"\
+                 "background-color: rgb(60, 60, 60);"\
                  "}"
 
-STATUS_LABEL = "color: rgb(255, 0, 0);"
+STATUS_LABEL_DISCONNECTED = "color: red;"
+STATUS_LABEL_CONNECTED = "color: green;"
 
 LINE_SEPARATOR = "border: 3px solid black;"
 
 FEED_LABEL = f"background-color: {ORANGE_THEME_RGB}; " \
              # "border: 3px solid red;"
+
