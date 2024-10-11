@@ -681,9 +681,16 @@ class MainWindow(QMainWindow):
 
         if self.status == "CONNECTED":
             qt_img = self.convert_cv_qt(cv_img)
+
+            # overlay water level
             self.update_water_indicator()
             water_level = self.curr_wl.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.overlay_pixmaps(qt_img, water_level, self.display_width - 390, 25)
+            self.overlay_pixmaps(qt_img, water_level, self.display_width - 330, 25)
+
+            # overlay battery level
+            battery_level = self.create_pixmap_from_text(f"Pi Battery: {self.pi_battery}%")
+            self.overlay_pixmaps(qt_img, battery_level,  self.display_width - 330, 75)
+
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
         else:
@@ -711,6 +718,23 @@ class MainWindow(QMainWindow):
                             self.curr_wl = self.wl_down_four
                             if self.water_level[4] == "1":
                                 self.curr_wl = self.wl_full
+
+    def create_pixmap_from_text(self, text, font_name="Arial", font_size=20, color=QColor("black"), width=300,
+                                height=100):
+
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+
+        font = QFont(font_name, font_size)
+        painter.setFont(font)
+        painter.setPen(color)
+
+        painter.drawText(pixmap.rect(), Qt.AlignRight, text)
+
+        painter.end()
+        return pixmap
 
     def overlay_pixmaps(self, base_pixmap, overlay_pixmap, x=0, y=0):
         # Create a QPainter to paint on the base pixmap
@@ -784,7 +808,6 @@ class MainWindow(QMainWindow):
                 execute_loop = True
                 in_loop_block = False
             if execute_loop:
-                print(is_infinite_loop)
                 i = 0
                 while i < loop and not script_stop_flag.is_set():
                     for ins in instructions_to_loop:
@@ -803,7 +826,6 @@ class MainWindow(QMainWindow):
     def send_script_instructions(self, command, value, delay_between_commands):
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
-        print(self.keys)
         self.send_commands()
         if command in ["aim_left", "aim_right", "aim_up", "aim_down"]:  # if it's aiming, turn value to degrees
             # convert value to angle, so use value to see how long it takes to turn a certain angle
@@ -812,7 +834,6 @@ class MainWindow(QMainWindow):
             time.sleep(value)  # value is treated as seconds
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.send_commands()
-        print(self.keys)
         time.sleep(delay_between_commands)
 
     def update_status(self):
