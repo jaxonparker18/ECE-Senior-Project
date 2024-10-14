@@ -24,7 +24,6 @@ import time
 import pathlib
 import struct
 
-# main_window = None
 
 # GLOBAL VARIABLES
 HOST = "10.42.0.1"
@@ -41,10 +40,17 @@ OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
 ON = '1'
 OFF = '0'
 DC = 'x'
+
 # thread stop flags
-video_stop_flag = threading.Event()
-recv_stop_flag = threading.Event()
-script_stop_flag = threading.Event()
+flag_video_stop = threading.Event()
+flag_recv_stop = threading.Event()
+flag_script_stop = threading.Event()
+
+# SHORTCUT BINDS
+TOGGLE_OPEN_WIN = "Ctrl+O"
+TOGGLE_LOG_WIN = "Ctrl+L"
+TOGGLE_SCRIPT_WIN = "Ctrl+,"
+SAVE = "Ctrl+S"
 
 
 class VideoThreadPiCam(QThread):
@@ -88,7 +94,7 @@ class VideoThreadPiCam(QThread):
         radius = 3
         thickness = -1
         color = (255, 0, 0)
-        while not video_stop_flag.is_set():
+        while not flag_video_stop.is_set():
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
                 buffer += packet
@@ -160,21 +166,28 @@ class ScriptWindow(QWidget):
         super().__init__()
         self.main_window = main_window
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
+
         self.width = 400
-        self.height = 300
+        self.height = 410
+        self.modified = False
+        self.curr_file = "Untitled"
+
         # self.setGeometry(main_window.screen.width() - 418, main_window.screen.height() - 425, 400, 300) # hard code
         self.setGeometry(log_window.geometry().topRight().x() - self.width + 23,    # 23 is offset
-                         log_window.geometry().topLeft().y() + log_window.geometry().height() + 125,
+                         log_window.geometry().topLeft().y() + log_window.geometry().height() + 115,
                          self.width,
                          self.height)
         self.setMinimumSize(self.width, self.height)
         self.setWindowTitle("Script Editor")
 
-        self.shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.shortcut = QShortcut(QKeySequence(TOGGLE_SCRIPT_WIN), self)
         self.shortcut.activated.connect(self.toggle_script_window)
 
-        self.shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        self.shortcut = QShortcut(QKeySequence(TOGGLE_LOG_WIN), self)
         self.shortcut.activated.connect(self.toggle_log_window)
+
+        self.shortcut = QShortcut(QKeySequence(SAVE), self)
+        self.shortcut.activated.connect(self.quick_save)
 
         # menubar
         menu = QMenuBar(self)
@@ -202,21 +215,31 @@ class ScriptWindow(QWidget):
             "AVAILABLE COMMANDS ARE: \n"
             "forward(x)\n"
             "backward(x)\n"
-            "left(x)\n"
-            "right(x)\n"
+            "WHERE x IS THE DISTANCE IN FEET \n"
+            "left(d)\n"
+            "right(d)\n"
+            "WHERE d IS THE DEGREES \n"
             "aim_up(s)\n"
             "aim_down(s)\n"
             "aim_left(s)\n"
             "aim_right(s)\n"
-            "WHERE x IS THE VALUE FOR THE COMMAND\n"
-            "AND s IS THE DEGREE OF THE TURN\n"
+            "AND s IS THE DEGREE OF THE TURN \n"
             "\n"
             "EXAMPLE:\n"
-            "forward(10) where 10 is the duration of this command (in seconds)\n"
+            "forward(10) // where 10 is the distance in feet \n"
             "\n"
-            "FOR AIMING COMMANDS:\n"
-            "aim_up(90) where 90 is the angle to turn\n"
-            "\n")
+            "FOR AIMING COMMANDS: \n"
+            "aim_up(90) // where 90 is the angle to turn \n"
+            "\n"
+            "FOR LOOPS: \n"
+            "for(n) // where n is the number of loops and end that closes the \n"
+            "loop block. For an infinite loop, n = -1. \n"
+            "EXAMPLE: \n"
+            "for(3) // loops three times \n"
+            "forward(3) \n"
+            "left(1) \n"
+            "end \n")
+        self.textBox.textChanged.connect(self.on_text_changed)
         self.submitButton = QPushButton("Push to submit and run code.")
         self.submitButton.clicked.connect(self.on_push_script)
         layout.addWidget(self.textBox)
@@ -224,26 +247,51 @@ class ScriptWindow(QWidget):
         self.setLayout(layout)
         layout.setMenuBar(menu)
 
+    def quick_save(self):
+        try:
+            if self.curr_file == "Untitled":
+                self.on_save_script()
+            else:
+                with open(self.curr_file, 'w') as file:
+                    file.write(self.textBox.toPlainText())
+                self.on_save()
+        except Exception as e:
+            self.main_window.log(CLIENT, "Quick save error: " + str(e))
+
+    def on_save(self):
+        self.modified = False
+        self.setWindowTitle(f"Script Editor - {os.path.splitext(os.path.basename(self.curr_file))[0]}")
+        self.modified = False
+        self.submitButton.setEnabled(True)
+
+    def on_text_changed(self):
+        self.setWindowTitle(f"Script Editor - *{os.path.splitext(os.path.basename(self.curr_file))[0]}")
+        self.modified = True
+        self.submitButton.setDisabled(True)
+
     def on_open_script(self):
         # BROWSE FILES AND PRINT CONTENT OF FILE
         try:
-            filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
-            content = open(filename[0]).read()
+            file = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
+            self.curr_file = file[0]
+            content = open(self.curr_file).read()
             self.textBox.setText(content)
+            self.on_save()
         except Exception as e:
-            self.main_window.log("Open error: " + str(e))
+            self.main_window.log(CLIENT, "Open error: " + str(e))
 
     def on_save_script(self):
         try:
-            filename, _ = QFileDialog.getSaveFileName(self, "Save File", "New_Script", "Text Files (*.txt)")
-            with open(filename, 'w') as file:
+            file = QFileDialog.getSaveFileName(self, "Save File", "New_Script", "Text Files (*.txt)")
+            self.curr_file = file[0]
+            with open(self.curr_file, 'w') as file:
                 file.write(self.textBox.toPlainText())
+            self.on_save()
         except Exception as e:
-            self.main_window.log("Save error: " + str(e))
+            self.main_window.log(CLIENT, "Save error: " + str(e))
 
     def on_push_script(self):
-        text = self.textBox.toPlainText()
-        self.main_window.log(text)
+        self.main_window.log(CLIENT, f"Executing script: {os.path.splitext(os.path.basename(self.curr_file))[0]}")
 
     def toggle_script_window(self):
         self.main_window.toggle_write_script()
@@ -258,11 +306,11 @@ class LogWindow(QWidget):
         self.main_window = main_window
         self.width = 300
         self.height = 400
-        self.setGeometry(main_window.screen.width() - 335, main_window.screen.height() - 960, self.width, self.height)
-        self.shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        self.setGeometry(main_window.screen.width() - 335, main_window.screen.height() - 970, self.width, self.height)
+        self.shortcut = QShortcut(QKeySequence(TOGGLE_LOG_WIN), self)
         self.shortcut.activated.connect(self.toggle_log_window)
 
-        self.shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.shortcut = QShortcut(QKeySequence(TOGGLE_SCRIPT_WIN), self)
         self.shortcut.activated.connect(self.toggle_script_window)
 
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
@@ -418,19 +466,19 @@ class MainWindow(QMainWindow):
         open_script_action = QAction(QIcon("controller.png"), "Open Script", self)
         open_script_action.setStatusTip("Opens script written in custom RFES language.")
         open_script_action.triggered.connect(self.on_open_script)
-        open_script_action.setShortcut(Qt.CTRL + Qt.Key_O)
+        open_script_action.setShortcut(TOGGLE_OPEN_WIN)
 
         # QAction for write script.
-        open_write_script_action = QAction(QIcon("controller.png"), "Write Script (Ctrl + S)", self)
+        open_write_script_action = QAction(QIcon("controller.png"), "Write Script", self)
         open_write_script_action.setStatusTip("Opens field to write custom RFES language script.")
         open_write_script_action.triggered.connect(self.on_write_script)
-        open_write_script_action.setShortcut("Ctrl+S")
+        open_write_script_action.setShortcut(TOGGLE_SCRIPT_WIN)
 
         # QAction for logger.
-        open_logger_action = QAction(QIcon("controller.png"), "Open Log (Ctrl + L)", self)
+        open_logger_action = QAction(QIcon("controller.png"), "Open Log", self)
         open_logger_action.setStatusTip("Opens logger to see updated information.")
         open_logger_action.triggered.connect(self.on_logger)
-        open_logger_action.setShortcut("Ctrl+L")
+        open_logger_action.setShortcut(TOGGLE_LOG_WIN)
 
         # Initialize StatusBar and MenuBar
         status_bar = self.statusBar()
@@ -655,7 +703,7 @@ class MainWindow(QMainWindow):
             self.status = "CONNECTED"
             self.update_status()
             # Creates a new thread for the camera
-            video_stop_flag.clear()  # resets flag
+            flag_video_stop.clear()  # resets flag
             self.feed_thread = VideoThreadPiCam(self, self.status, self.ip_entry.text(), int(
                 self.port_entry.text()) + 1)
             # connect its signal to the update_image slot
@@ -665,13 +713,17 @@ class MainWindow(QMainWindow):
             self.update()
 
         else:
+            self.keys = OFF_KEYS.copy()
+            self.send_commands()
             self.status = "DISCONNECTED"
             self.log(CLIENT, "Connection closed.")
             self.update_status()
             self.socket.close()
 
-            # disables video thread
-            video_stop_flag.set()
+            # disable all threads
+            flag_video_stop.set()
+            flag_recv_stop.set()
+            flag_script_stop.set()
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
@@ -685,11 +737,11 @@ class MainWindow(QMainWindow):
             # overlay water level
             self.update_water_indicator()
             water_level = self.curr_wl.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.overlay_pixmaps(qt_img, water_level, self.display_width - 330, 25)
+            self.overlay_pixmap(qt_img, water_level, self.display_width - 330, 25)
 
             # overlay battery level
             battery_level = self.create_pixmap_from_text(f"Pi Battery: {self.pi_battery}%")
-            self.overlay_pixmaps(qt_img, battery_level,  self.display_width - 330, 75)
+            self.overlay_pixmap(qt_img, battery_level, self.display_width - 330, 75)
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
@@ -719,7 +771,8 @@ class MainWindow(QMainWindow):
                             if self.water_level[4] == "1":
                                 self.curr_wl = self.wl_full
 
-    def create_pixmap_from_text(self, text, font_name="Arial", font_size=20, color=QColor("black"), width=300,
+    @staticmethod
+    def create_pixmap_from_text(text, font_name="Arial", font_size=20, color=QColor("black"), width=300,
                                 height=100):
 
         pixmap = QPixmap(width, height)
@@ -736,7 +789,8 @@ class MainWindow(QMainWindow):
         painter.end()
         return pixmap
 
-    def overlay_pixmaps(self, base_pixmap, overlay_pixmap, x=0, y=0):
+    @staticmethod
+    def overlay_pixmap(base_pixmap, overlay_pixmap, x=0, y=0):
         # Create a QPainter to paint on the base pixmap
         painter = QPainter(base_pixmap)
 
@@ -766,7 +820,8 @@ class MainWindow(QMainWindow):
         Starts the run_instr thread to run instrucitons.
         """
         instructions_path = "patrol.txt"  # should be from a field
-        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,))
+        self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,),
+                                                 daemon=True)   # exit as soon as main thread is done
         self.run_instr_thread.start()
 
     def execute_instructions(self, instructions_path):
@@ -782,12 +837,10 @@ class MainWindow(QMainWindow):
         execute_loop = False
         is_infinite_loop = False
         instructions_to_loop = []
-        script_stop_flag.clear()
-
+        flag_script_stop.clear()
         instructions = Instructions_Reader.path_to_instructions(instructions_path)  # "["forward(10)", "left(90)", ...]"
-        print(instructions)
-        for instruction in instructions:
-            if script_stop_flag.is_set():
+        for instruction in instructions:    # loops through all instructions
+            if flag_script_stop.is_set():   # stops any ongoing commands
                 break
             inst = Instructions_Reader.instruction_as_tuple(instruction)  # "("forward", "10")"
             command = inst[0]  # forward
@@ -809,9 +862,9 @@ class MainWindow(QMainWindow):
                 in_loop_block = False
             if execute_loop:
                 i = 0
-                while i < loop and not script_stop_flag.is_set():
+                while i < loop and not flag_script_stop.is_set():
                     for ins in instructions_to_loop:
-                        if script_stop_flag.is_set():   # stop thread
+                        if flag_script_stop.is_set():   # stop thread
                             break
                         command = ins[0]  # forward
                         value = float(ins[1])  # 10
@@ -827,14 +880,49 @@ class MainWindow(QMainWindow):
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
         self.send_commands()
-        if command in ["aim_left", "aim_right", "aim_up", "aim_down"]:  # if it's aiming, turn value to degrees
-            # convert value to angle, so use value to see how long it takes to turn a certain angle
-            time.sleep(value)  # right now it is still value as seconds
-        else:
-            time.sleep(value)  # value is treated as seconds
+        time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.send_commands()
         time.sleep(delay_between_commands)
+
+    @staticmethod
+    def convert_speed_to_time(command, value):
+        """
+        Converts the speed of a command to the desired time it takes to travel.
+        :param command: the command executed
+        :param value: value of command
+        :return: the time needed
+        """
+        # CALIBRATION
+        FORWARD_ONE_SECOND = 9.65  # inches
+        BACKWARD_ONE_SECOND = 10.1  # inches
+        degrees_tested = 90
+        LEFT_90 = 0.72      # seconds
+        RIGHT_90 = 0.756    # seconds
+        if command == ["forward", "backward"]:
+            speed_ips = 0
+            if command == "forward":
+                speed_ips = FORWARD_ONE_SECOND
+            elif command == "backward":
+                speed_ips = BACKWARD_ONE_SECOND
+            feet_per_second = speed_ips/12
+            time_per_foot = 1/feet_per_second
+            return value * time_per_foot
+        elif command == ["left", "right"]:
+            # value will store the degrees
+            time_for_90 = 0
+            if command == "left":
+                time_for_90 = LEFT_90
+            elif command == "right":
+                time_for_90 = RIGHT_90
+            t_per_deg = time_for_90 / degrees_tested
+            return value * t_per_deg
+        elif command == ["aim_left", "aim_right", "aim_up", "aim_down"]:
+            # if it's aiming, turn value to degrees
+            # convert value to angle, so use value to see how long it takes to turn a certain angle
+            return value    # not implemented yet
+        else:
+            raise Exception("Unknown command.")
 
     def update_status(self):
         """
@@ -883,8 +971,9 @@ class MainWindow(QMainWindow):
             self.script_window.show()
             self.script_window.textBox.clear()
             self.script_window.textBox.setText(content)
+            self.script_window.setWindowTitle(f"Script Editor - {os.path.basename(filename[0])}")
         except Exception as e:
-            self.log("Open error: " + str(e))
+            self.log(CLIENT, "Please select a valid file.")
 
     def on_write_script(self):
         self.script_window.show()
