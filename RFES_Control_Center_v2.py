@@ -171,6 +171,7 @@ class ScriptWindow(QWidget):
         self.height = 410
         self.modified = False
         self.curr_file = "Untitled"
+        self.execute_script_thread = None
 
         # self.setGeometry(main_window.screen.width() - 418, main_window.screen.height() - 425, 400, 300) # hard code
         self.setGeometry(log_window.geometry().topRight().x() - self.width + 23,    # 23 is offset
@@ -249,7 +250,7 @@ class ScriptWindow(QWidget):
 
     def quick_save(self):
         try:
-            if self.curr_file == "Untitled":
+            if self.curr_file == "Untitled" or self.curr_file == "":
                 self.on_save_script()
             else:
                 with open(self.curr_file, 'w') as file:
@@ -292,6 +293,9 @@ class ScriptWindow(QWidget):
 
     def on_push_script(self):
         self.main_window.log(CLIENT, f"Executing script: {os.path.splitext(os.path.basename(self.curr_file))[0]}")
+        self.execute_script_thread = threading.Thread(target=self.main_window.execute_instructions, args=(self.curr_file,),
+                                                      daemon=True)  # exit as soon as main thread is done
+        self.execute_script_thread.start()
 
     def toggle_script_window(self):
         self.main_window.toggle_write_script()
@@ -366,16 +370,17 @@ class LogWindow(QWidget):
         :param side: message source, client/server
         :param message: the message to be logged
         """
-        time = datetime.now().strftime("%H:%M:%S")
-        if side == 0:
-            self.logger.setText(str(self.logger.toPlainText()) + (
-                "\n" if self.logger.toPlainText() != "" else "") + time + " - CLIENT: " + message)
-        else:
-            self.logger.setText(str(self.logger.toPlainText()) + (
-                "\n" if self.logger.toPlainText() != "" else "") + time + " - SERVER: " + message)
-        self.logger.verticalScrollBar().setValue(
-            self.logger.verticalScrollBar().maximum()
-        )
+        with self.main_window.log_lock:
+            curr_time = datetime.now().strftime("%H:%M:%S")
+            curr_text = str(self.logger.toPlainText())
+            if side == 0:
+                self.logger.setText(curr_text + ("\n" if curr_text != "" else "") + curr_time + " - CLIENT: " + message)
+            else:
+                self.logger.setText(curr_text + (
+                    "\n" if self.logger.toPlainText() != "" else "") + curr_time + " - SERVER: " + message)
+            self.logger.verticalScrollBar().setValue(
+                self.logger.verticalScrollBar().maximum()
+            )
 
 
 class MainWindow(QMainWindow):
@@ -430,6 +435,9 @@ class MainWindow(QMainWindow):
         self.coms_thread = None
         self.recv_thread = None
         self.run_instr_thread = None
+
+        # locks
+        self.log_lock = threading.RLock()
 
         self.defaultIP = str(HOST)
         self.defaultPort = str(PORT)
@@ -548,6 +556,10 @@ class MainWindow(QMainWindow):
         """
 
         key = event.key()
+
+        # if key == Qt.Key_I:   # for debugging purposes
+        #     self.run_instructions()
+
         if key == Qt.Key_M:
             if not self.is_tracking_mouse:
                 self.is_tracking_mouse = True
@@ -579,8 +591,8 @@ class MainWindow(QMainWindow):
                 self.keys[7] = '1'
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
-            if key == Qt.Key_I:
-                self.run_instructions()
+            # if key == Qt.Key_I:
+            #     self.run_instructions()
             self.send_commands()
 
     def keyReleaseEvent(self, event):
@@ -670,8 +682,6 @@ class MainWindow(QMainWindow):
                 elif data.startswith("/PIB"):
                     self.pi_battery = data[4:]
                 else:
-                    # set self.feed_thread.x to update to new ch pos
-                    # if data is about servo movement, move the image instead.
                     recv_thread = LoggerThread(self, SERVER, data)
                     recv_thread.update_signal.connect(self.log)
                     recv_thread.start()
@@ -819,7 +829,8 @@ class MainWindow(QMainWindow):
         """
         Starts the run_instr thread to run instrucitons.
         """
-        instructions_path = "patrol.txt"  # should be from a field
+
+        instructions_path = "New_Script.txt"  # should be from a field
         self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,),
                                                  daemon=True)   # exit as soon as main thread is done
         self.run_instr_thread.start()
@@ -829,6 +840,7 @@ class MainWindow(QMainWindow):
         Executes the instructions file by sending commands to RFES.
         :param instructions_path: file path
         """
+
         # NEEDS TO BE A ASYNC SINCE THIS HAS DELAY
         delay_between_commands = 0.1
 
@@ -862,8 +874,10 @@ class MainWindow(QMainWindow):
                 in_loop_block = False
             if execute_loop:
                 i = 0
+                print(instructions_to_loop)
                 while i < loop and not flag_script_stop.is_set():
                     for ins in instructions_to_loop:
+
                         if flag_script_stop.is_set():   # stop thread
                             break
                         command = ins[0]  # forward
@@ -875,11 +889,14 @@ class MainWindow(QMainWindow):
             else:
                 value = float(value)  # 10
                 self.send_script_instructions(command, value, delay_between_commands)
+        # self.log(CLIENT, "Execution completed.")
+        # self.log_window.log(CLIENT, "Done")
 
     def send_script_instructions(self, command, value, delay_between_commands):
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
         self.send_commands()
+        # print(f"keys sent: {self.keys}")
         time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
         self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         self.send_commands()
@@ -899,7 +916,7 @@ class MainWindow(QMainWindow):
         degrees_tested = 90
         LEFT_90 = 0.72      # seconds
         RIGHT_90 = 0.756    # seconds
-        if command == ["forward", "backward"]:
+        if command in ["forward", "backward"]:
             speed_ips = 0
             if command == "forward":
                 speed_ips = FORWARD_ONE_SECOND
@@ -908,7 +925,7 @@ class MainWindow(QMainWindow):
             feet_per_second = speed_ips/12
             time_per_foot = 1/feet_per_second
             return value * time_per_foot
-        elif command == ["left", "right"]:
+        elif command in ["left", "right"]:
             # value will store the degrees
             time_for_90 = 0
             if command == "left":
@@ -917,12 +934,12 @@ class MainWindow(QMainWindow):
                 time_for_90 = RIGHT_90
             t_per_deg = time_for_90 / degrees_tested
             return value * t_per_deg
-        elif command == ["aim_left", "aim_right", "aim_up", "aim_down"]:
+        elif command in ["aim_left", "aim_right", "aim_up", "aim_down"]:
             # if it's aiming, turn value to degrees
             # convert value to angle, so use value to see how long it takes to turn a certain angle
             return value    # not implemented yet
-        else:
-            raise Exception("Unknown command.")
+        else: # spray
+            return value
 
     def update_status(self):
         """
@@ -966,12 +983,16 @@ class MainWindow(QMainWindow):
     def on_open_script(self):
         # BROWSE FILES AND PRINT CONTENT OF FILE
         try:
-            filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
-            content = open(filename[0]).read()
-            self.script_window.show()
-            self.script_window.textBox.clear()
-            self.script_window.textBox.setText(content)
-            self.script_window.setWindowTitle(f"Script Editor - {os.path.basename(filename[0])}")
+            self.script_window.on_open_script()
+            self.on_write_script()
+            # filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
+            # content = open(filename[0]).read()
+            # self.script_window.show()
+            # self.script_window.textBox.clear()
+            # self.script_window.textBox.setText(content)
+            # self.script_window.curr_file = filename
+            # self.script_window.setWindowTitle(f"Script Editor - {os.path.splitext(os.path.basename(filename[0]))[0]}")
+
         except Exception as e:
             self.log(CLIENT, "Please select a valid file.")
 
@@ -983,7 +1004,6 @@ class MainWindow(QMainWindow):
             self.script_window.hide()
         else:
             self.script_window.show()
-            self.script_window.textBox.clear()
 
     def on_logger(self):
         self.log_window.show()
