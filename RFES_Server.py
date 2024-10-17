@@ -16,7 +16,7 @@ import struct
 
 # PI EXCLUSIVE
 import serial
-from gpiozero import Motor, Servo, PWMLED, LED, InputDevice
+from gpiozero import Motor, Servo, PWMLED, LED, InputDevice, CPUTemperature
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
@@ -129,6 +129,14 @@ left = DC
 right = DC
 m_y = DC
 m_x = DC
+
+# threading
+video_thread_SF = threading.Event()
+commands_thread_SF = threading.Event()
+
+pi_battery_thread_SF = threading.Event()
+water_level_thread_SF = threading.Event()
+cpu_temp_thread_SF = threading.Event()
 
 
 def recv_data():
@@ -383,13 +391,13 @@ def execute_commands(bits):
 
 
 def update_pi_battery(pi_battery):
-    while True:
-        send_to_client("/D" + str(pi_battery.getPercentage()))
+    while not pi_battery_thread_SF.is_set():
+        send_to_client("/PIB" + str(pi_battery.getPercentage()))
         time.sleep(5)
 
 
 def update_water_level():
-    while True:
+    while not water_level_thread_SF.is_set():
         level = "00000"
         if not wl_five.is_active:
             level[4] = "1"
@@ -401,8 +409,15 @@ def update_water_level():
             level[1] = "1"
         if not wl_one.is_active:
             level[0] = "1"
-        send_to_client("/D" + str(level))
+        send_to_client("/WL" + str(level))
         time.sleep(2)
+
+
+def update_cpu_temp():
+    cpu_temp = CPUTemperature(min_temp=50, max_temp=90)
+    while not cpu_temp_thread_SF.is_set():
+        send_to_client("/CT" + str(round(cpu_temp.temperature, 1)))
+        time.sleep(5)
 
 
 def handle_commands():
@@ -411,7 +426,7 @@ def handle_commands():
     """
 
     global client_socket
-    while True:
+    while not commands_thread_SF.is_set():
         try:
             client_socket, tcp_address = commands_socket.accept()
             print(f"Command center connected at {tcp_address}.")
@@ -419,11 +434,18 @@ def handle_commands():
             # start pi_battery thread
             pi_battery = PiBatteryIndicator.INA219(addr=0x41)
             pi_battery_thread = threading.Thread(target=update_pi_battery, args=(pi_battery,))
+            pi_battery_thread_SF.clear()
             pi_battery_thread.start()
 
             # start water_level thread
             water_level_thread = threading.Thread(target=update_water_level, args=())
+            water_level_thread_SF.clear()
             water_level_thread.start()
+
+            # start cpu_temp thread
+            cpu_temp_thread = threading.Thread(target=update_cpu_temp, args=())
+            cpu_temp_thread_SF.clear()
+            cpu_temp_thread.start()
             while True:
                 try:
                     # data = client_socket.recv(1024) # , MSG_WAITALL
@@ -438,9 +460,14 @@ def handle_commands():
                 except KeyboardInterrupt:
                     print("Commands disconnected from control center: Keyboard Interrupt exception")
                     client_socket.close()
+                    pi_battery_thread_SF.set()
                     pi_battery_thread.join()
+                    water_level_thread_SF.set()
                     water_level_thread.join()
-                    sys.exit(0)
+                    cpu_temp_thread_SF.set()
+                    cpu_temp_thread.join()
+                    commands_thread_SF.set()
+                    # sys.exit(0)
                 # except:
                 #    print("Commands disconnected from control center: Failed to receive exception")
                 #    clean_up()
@@ -448,9 +475,15 @@ def handle_commands():
         except KeyboardInterrupt:
             print("Server hard-stopped with CTRL + C.")
             client_socket.close()
+            pi_battery_thread_SF.set()
             pi_battery_thread.join()
+            water_level_thread_SF.set()
             water_level_thread.join()
-            sys.exit(0)
+            cpu_temp_thread_SF.set()
+            cpu_temp_thread.join()
+
+            commands_thread_SF.set()
+            # sys.exit(0)
 
 
 def handle_video():
@@ -464,7 +497,7 @@ def handle_video():
         main={"format": 'XRGB8888', "size": (1640, 1232)}))  # "libcamera-hello -t 1 --nopreview" for all resolutions
     picam2.start()
 
-    while True:
+    while not video_thread_SF.is_set():
         client_sock, tcp_address = video_socket.accept()
         print(f"Video control connected at {tcp_address}.")
         while True:
@@ -476,8 +509,11 @@ def handle_video():
             except KeyboardInterrupt:
                 print("Server hard-stopped with CTRL + C.")
                 client_sock.close()
+                video_thread_SF.set()
                 sys.exit(0)
             except:
+                video_thread_SF.set()
+                video_thread.join()
                 print("Video control disconnected from control center")
                 break
 
@@ -502,9 +538,11 @@ video_socket.bind((HOST, video_port))
 video_socket.listen(1)
 
 commands_thread = threading.Thread(target=handle_commands, args=())
+commands_thread_SF.clear()
 commands_thread.start()
 
 video_thread = threading.Thread(target=handle_video, args=())
+video_thread_SF.clear()
 video_thread.start()
 
 print("Server online...")

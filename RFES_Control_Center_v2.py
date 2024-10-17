@@ -33,13 +33,15 @@ PORT = 2100  # The port used by the server, must be >= 1024
 CLIENT = 0
 SERVER = 1
 
-# corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
-IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
-OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-
 ON = '1'
 OFF = '0'
 DC = 'x'
+
+# corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
+IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
+    #  [DC, DC, DC, DC, DC, DC, DC, DC, DC, DC, DC]
+OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        #   [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF]
 
 # thread stop flags
 flag_video_stop = threading.Event()
@@ -418,6 +420,7 @@ class MainWindow(QMainWindow):
         self.socket = None
 
         self.pi_battery = "0.00%"
+        self.cpu_temp = "0" + chr(176) + "C"
 
         # where "1, 2, 3, 4, 5"
         self.water_level = "00000"
@@ -443,7 +446,7 @@ class MainWindow(QMainWindow):
         self.defaultPort = str(PORT)
         self.status = "DISCONNECTED"
 
-        self.keys = IDLE
+        self.keys = IDLE.copy()
 
         # mouse track
         self.is_tracking_mouse = False
@@ -678,9 +681,10 @@ class MainWindow(QMainWindow):
                 # filter data
                 if data.startswith("/WL"):
                     self.water_level = data[3:]
-                    continue
                 elif data.startswith("/PIB"):
                     self.pi_battery = data[4:]
+                elif data.startswith("/CT"):
+                    self.cpu_temp = data[3:] + chr(176) + "C"
                 else:
                     recv_thread = LoggerThread(self, SERVER, data)
                     recv_thread.update_signal.connect(self.log)
@@ -752,6 +756,10 @@ class MainWindow(QMainWindow):
             # overlay battery level
             battery_level = self.create_pixmap_from_text(f"Pi Battery: {self.pi_battery}%")
             self.overlay_pixmap(qt_img, battery_level, self.display_width - 330, 75)
+
+            # overlay cpu temp
+            cpu_temp = self.create_pixmap_from_text(f"CPU Temp: {self.cpu_temp}")
+            self.overlay_pixmap(qt_img, cpu_temp, self.display_width - 330, 110)
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
@@ -893,12 +901,12 @@ class MainWindow(QMainWindow):
         # self.log_window.log(CLIENT, "Done")
 
     def send_script_instructions(self, command, value, delay_between_commands):
-        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'] #OFF_KEYS.copy()
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
         self.send_commands()
         # print(f"keys sent: {self.keys}")
         time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
-        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'] #OFF_KEYS.copy()
         self.send_commands()
         time.sleep(delay_between_commands)
 
