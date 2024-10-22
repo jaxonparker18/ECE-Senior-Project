@@ -18,7 +18,7 @@ if not ret:
 bbox = cv2.selectROI("Tracking", frame, False)
 
 # Initialize the CSRT tracker with the selected bounding box
-tracker = cv2.TrackerKCF_create()
+tracker = cv2.Tracker
 tracker.init(frame, bbox)
 
 while True:

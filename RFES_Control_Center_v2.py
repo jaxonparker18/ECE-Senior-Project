@@ -1,9 +1,7 @@
 import os
-import traceback
 from datetime import datetime
 import sys
 from socket import *
-import multiprocessing
 import threading
 
 from PyQt5.QtGui import *
@@ -17,13 +15,11 @@ import res.Fonts as fonts
 import Instructions_Reader
 
 import cv2
-import torch
 import numpy as np
 import base64
 import time
-import pathlib
 import struct
-
+from inference.models.utils import get_roboflow_model
 
 # GLOBAL VARIABLES
 HOST = "10.42.0.1"
@@ -39,9 +35,20 @@ DC = 'x'
 
 # corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
 IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
-    #  [DC, DC, DC, DC, DC, DC, DC, DC, DC, DC, DC]
+        #  [DC, DC, DC, DC, DC, DC, DC, DC, DC, DC, DC]
 OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
         #   [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF]
+
+FEED_WIDTH = 0
+FEED_HEIGHT = 0
+
+is_auto_detecting = False
+target_x = 0
+target_y = 0
+
+center_x = FEED_WIDTH // 2
+center_y = FEED_HEIGHT // 2
+
 
 # thread stop flags
 flag_video_stop = threading.Event()
@@ -90,8 +97,16 @@ class VideoThreadPiCam(QThread):
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect(addr)
         buffer = b''
-        # OBJ DETECT
-        # model = torch.hub.load(r'D:\Documents\UoU\Spring24\ECE3992\ECE-Senior-Project\yolov5', 'custom', source='local', path='fire_v5n50e.pt', force_reload=True)
+        # Get Roboflow face model (this will fetch the model from Roboflow)
+        model_name = "deteksiasapdanapi"  # FIRE
+        model_version = "4"
+        api_key = "NHxBSfWHlHDOQC07yyLm"
+        model = get_roboflow_model(
+            model_id="{}/{}".format(model_name, model_version),
+            # Replace ROBOFLOW_API_KEY with your Roboflow API Key
+            api_key=api_key
+        )
+
         # circle attr
         radius = 3
         thickness = -1
@@ -100,6 +115,7 @@ class VideoThreadPiCam(QThread):
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
                 buffer += packet
+
                 while b'\0' in buffer:
                     # start = time.time()
                     message, buffer = buffer.split(b'\0', 1)
@@ -107,24 +123,46 @@ class VideoThreadPiCam(QThread):
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
 
-                    # OBJ DETECTION
-                    # frame = cv2.resize(frame, (640, 480)) # (1920, 1080) (640, 480)
-                    # results = model(frame)
-                    # frame = np.squeeze(results.render())
-                    # # x1(pixels), y1(pixels), x2(pixels), y2(pixels), confidence, class
-                    # # print(results.xyxy)
-                    # if len(results.xyxy[0]) > 0:
-                    #     x1 = results.xyxy[0][0][0]
-                    #     y1 = results.xyxy[0][0][1]
-                    #     x2 = results.xyxy[0][0][2]
-                    #     y2 = results.xyxy[0][0][3]
-                    #
-                    #     mid_x = (x1 + x2) / 2
-                    #     mid_y = (y1 + y2) / 2
-                    #
-                    #     center_coordinate = (int(mid_x), int(mid_y))
-                    #     frame = cv2.circle(frame, center_coordinate, radius, color, thickness)
+                    global FEED_WIDTH
+                    global FEED_HEIGHT
+                    FEED_WIDTH = frame.shape[1]
+                    FEED_HEIGHT = frame.shape[0]
 
+                    # OBJ DETECT ROBOFLOW
+                    global is_auto_detecting
+                    if is_auto_detecting:
+                        results = model.infer(image=frame,
+                                              confidence=0.5,
+                                              iou_threshold=0.5)
+
+                        # Plot image with face bounding box (using opencv)
+                        if results[0].predictions:
+                            prediction = results[0].predictions[0]
+                            # class_name = prediction.class_name
+                            # confidence = prediction.confidence
+                            # print(prediction)
+                            # print(class_name)
+
+                            x_center = int(prediction.x)
+                            y_center = int(prediction.y)
+                            width = int(prediction.width)
+                            height = int(prediction.height)
+
+                            # Calculate top-left and bottom-right corners from center, width, and height
+                            x0 = x_center - width // 2
+                            y0 = y_center - height // 2
+                            x1 = x_center + width // 2
+                            y1 = y_center + height // 2
+
+                            cv2.rectangle(frame, (x0, y0), (x1, y1), (255, 255, 0), 5)
+                            cv2.circle(frame, (x_center, y_center), radius, color, thickness)
+                            global target_x
+                            global target_y
+                            target_x = x_center
+                            target_y = y_center
+                            cv2.putText(frame, "Fire", (x0, y0 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+
+                    cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)
                     self.change_pixmap_signal.emit(frame)
 
                     # FPS CHECK
@@ -408,16 +446,15 @@ class MainWindow(QMainWindow):
         self.center_widget = None
         self.center_layout = None
 
-        # top bar
         self.ip_entry = None
         self.port_entry = None
         self.connect_button = None
         self.status_label = None
-
-        # center
         self.feed = None
 
         self.socket = None
+        self.nozzle_x = 0
+        self.nozzle_y = 0
 
         self.pi_battery = "0.00%"
         self.cpu_temp = "0" + chr(176) + "C"
@@ -433,6 +470,10 @@ class MainWindow(QMainWindow):
         self.wl_empty_no_text = QPixmap("res/water_level/empty_without_text.png")
         self.curr_wl = self.wl_empty_text
         self.mt_counter = 0
+
+        self.main_battery_bg = QPixmap("res/main_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.pi_battery_bg = QPixmap("res/pi_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.pi_temperature_bg = QPixmap("res/pi_temperature_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
         self.feed_thread = None
         self.coms_thread = None
@@ -514,6 +555,8 @@ class MainWindow(QMainWindow):
     #     """
     #     print('Mouse coords: ( %d : %d )' % (event.x(), event.y()))
 
+    # def auto_target(self):
+
     def mouseMoveEvent(self, event):
         """
         Tracks the movement of the mouse and bounds mouse to the window screen.
@@ -594,8 +637,24 @@ class MainWindow(QMainWindow):
                 self.keys[7] = '1'
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
-            # if key == Qt.Key_I:
-            #     self.run_instructions()
+            if key == Qt.Key_I:
+                global is_auto_detecting
+                if is_auto_detecting:
+                    is_auto_detecting = False
+                else:
+                    is_auto_detecting = True
+            # incr = 1
+            # global center_x
+            # global center_y
+            # if key == Qt.Key_V:
+            #     center_x += incr
+            # if key == Qt.Key_B:
+            #     center_x -= incr
+            # if key == Qt.Key_N:
+            #     center_y += incr
+            # if key == Qt.Key_Comma:
+            #     center_y -= incr
+
             self.send_commands()
 
     def keyReleaseEvent(self, event):
@@ -753,16 +812,26 @@ class MainWindow(QMainWindow):
             water_level = self.curr_wl.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.overlay_pixmap(qt_img, water_level, self.display_width - 330, 25)
 
+            # overlay battery_level img
+            self.overlay_pixmap(qt_img, self.pi_battery_bg, self.display_width - 230, 75)
+
             # overlay battery level
             battery_level = self.create_pixmap_from_text(f"Pi Battery: {self.pi_battery}%")
-            self.overlay_pixmap(qt_img, battery_level, self.display_width - 330, 75)
+            self.overlay_pixmap(qt_img, battery_level, self.display_width - 230, 75)
+
+            # overlay cpu temp
+            self.overlay_pixmap(qt_img, self.pi_temperature_bg, self.display_width - 230, 110)
 
             # overlay cpu temp
             cpu_temp = self.create_pixmap_from_text(f"CPU Temp: {self.cpu_temp}")
-            self.overlay_pixmap(qt_img, cpu_temp, self.display_width - 330, 110)
+            self.overlay_pixmap(qt_img, cpu_temp, self.display_width - 230, 110)
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
+            global target_x
+            global target_y
+            print(f"x: {target_x}")
+            print(f"y: {target_y}")
         else:
             self.feed.setPixmap(QPixmap("res/not_connected.png"))
             self.update()
@@ -901,12 +970,12 @@ class MainWindow(QMainWindow):
         # self.log_window.log(CLIENT, "Done")
 
     def send_script_instructions(self, command, value, delay_between_commands):
-        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'] #OFF_KEYS.copy()
+        self.keys = OFF_KEYS.copy()
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
         self.send_commands()
         # print(f"keys sent: {self.keys}")
         time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
-        self.keys = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'] #OFF_KEYS.copy()
+        self.keys = OFF_KEYS.copy()
         self.send_commands()
         time.sleep(delay_between_commands)
 
@@ -1126,8 +1195,8 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    myappid = 'rfes-control-center'  # arbitrary string
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    my_app_id = 'rfes-control-center'  # arbitrary string
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 
     app = QApplication(sys.argv)
     main_window = MainWindow()

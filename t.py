@@ -1,5 +1,6 @@
 import time
-def test(v):
+
+def te(v):
     if v:
         print("v is true")
     else:
@@ -10,8 +11,8 @@ def set_true(x):
 
 b = False
 
-test(b)
+te(b)
 time.sleep(1)
 set_true(b)
 time.sleep(1)
-test(b)
+te(b)

@@ -1,0 +1,2 @@
+inference
+PyQt5
