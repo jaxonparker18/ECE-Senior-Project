@@ -58,7 +58,6 @@ class UpdateServoThread(threading.Thread):
                 if self.current_pwm_val >= self.pwm_min:
                     self.current_pwm_val -= self.increment
             self.servo.change_duty_cycle(self.current_pwm_val)
-            print(self.current_pwm_val)
 
     def stop(self):
         self.stop_event.set()
@@ -74,6 +73,10 @@ IDLE = 4
 ON = "1"
 OFF = "0"
 DC = "x"
+
+FULL_SPEED = 0.75
+TURN_SPEED = 0.10
+TRACK_SPEED = 0.10
 
 # UART - DEPRECIATED
 # serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
@@ -258,6 +261,11 @@ def execute_commands(bits):
             left = bits[7]
         if bits[8] != DC:
             right = bits[8]
+        if bits[9] == DC:  # for mouse control
+            m_y = DC
+        if bits[10] == DC:  # for mouse controlelse:
+            pwm_y.change_duty_cycle(float(m_y))
+            m_x = DC
         if bits[9] != DC:
             m_y = bits[9]
         if bits[10] != DC:
@@ -266,31 +274,31 @@ def execute_commands(bits):
 
         # MOVEMENT
         if w == ON and a == ON:
-            set_motor(0.10, 0.75)
+            set_motor(TURN_SPEED, FULL_SPEED)
             send_to_client("W and A executed.")
         elif w == ON and d == ON:
-            set_motor(0.75, 0.10)
+            set_motor(FULL_SPEED, TURN_SPEED)
             send_to_client("W and D executed.")
         elif w == ON and s == ON:
             set_motor(0, 0)
             send_to_client("W and S executed.")
         elif s == ON and a == ON:
-            set_motor(-0.25, -0.75)
+            set_motor(-TURN_SPEED, -FULL_SPEED)
             send_to_client("S and A executed.")
         elif s == ON and d == ON:
-            set_motor(-0.75, -0.25)
+            set_motor(-FULL_SPEED, -TURN_SPEED)
             send_to_client("S and D executed.")
         elif w == ON:
-            set_motor(0.75, 0.75)
+            set_motor(FULL_SPEED, FULL_SPEED)
             send_to_client("W executed.")
         elif s == ON:
-            set_motor(-0.75, -0.75)
+            set_motor(-FULL_SPEED, -FULL_SPEED)
             send_to_client("S executed.")
         elif a == ON:
-            set_motor(-0.75, 0.75)
+            set_motor(-FULL_SPEED, FULL_SPEED)
             send_to_client("A executed.")
         elif d == ON:
-            set_motor(0.75, -0.75)
+            set_motor(FULL_SPEED, -FULL_SPEED)
             send_to_client("D executed.")
         else:
             set_motor(0, 0)
@@ -326,6 +334,7 @@ def execute_commands(bits):
                     move_y_thread.stop()
                     move_y_thread.join()
                     move_y_thread = None
+
         if m_x != DC:
             pwm_x.change_duty_cycle(float(m_x))
         else:
@@ -360,6 +369,8 @@ def execute_commands(bits):
         if space == OFF:
             pump.off()
             send_to_client("Stop spraying...")
+
+        # send_to_client("/NP" +  + "," + )
 
         # reset if 0
         if bits[0] == OFF:
@@ -398,7 +409,7 @@ def update_pi_battery(pi_battery):
 
 def update_water_level():
     while not water_level_thread_SF.is_set():
-        level = "00000"
+        level = ["0", "0", "0", "0", "0"]
         if not wl_five.is_active:
             level[4] = "1"
         if not wl_four.is_active:
@@ -409,7 +420,7 @@ def update_water_level():
             level[1] = "1"
         if not wl_one.is_active:
             level[0] = "1"
-        send_to_client("/WL" + str(level))
+        send_to_client("/WL" + "".join(level))
         time.sleep(2)
 
 

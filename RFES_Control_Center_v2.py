@@ -34,6 +34,17 @@ OFF = '0'
 DC = 'x'
 
 # corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
+W_INDEX = 0
+A_INDEX = 1
+S_INDEX = 2
+D_INDEX = 3
+SB_INDEX = 4
+UP_INDEX = 5
+DOWN_INDEX = 6
+LEFT_INDEX = 7
+RIGHT_INDEX = 8
+M_Y_INDEX = 10
+M_X_INDEX = 11
 IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
         #  [DC, DC, DC, DC, DC, DC, DC, DC, DC, DC, DC]
 OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
@@ -42,18 +53,21 @@ OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
 FEED_WIDTH = 0
 FEED_HEIGHT = 0
 
+CENTER_X = 0
+CENTER_Y = 0
+
 is_auto_detecting = False
+is_tracking = False
 target_x = 0
 target_y = 0
-
-center_x = FEED_WIDTH // 2
-center_y = FEED_HEIGHT // 2
-
+target_width = 0
+target_height = 0
 
 # thread stop flags
 flag_video_stop = threading.Event()
 flag_recv_stop = threading.Event()
 flag_script_stop = threading.Event()
+flag_script_stop.set()  # so that text is not displayed on the screen
 
 # SHORTCUT BINDS
 TOGGLE_OPEN_WIN = "Ctrl+O"
@@ -78,26 +92,32 @@ class VideoThreadPiCam(QThread):
         :param port: the port number
         """
 
-        super().__init__(parent)
+        self.main_window = parent
+        super().__init__(self.main_window)
         self.connected = status
         self.client_socket = None
         self.host = host
         self.port = port
         self.grab_frame = True
         self.x = 0
+        self.frame_threshold = 5   # frames it takes to lock on
+        self.frame_counter = 0      # counter
+        self.tracker = None
 
     def run(self):
         """
         Runs the thread by connecting to the TCP socket receiving frames in bytes and decoding it
         using cv2, then displaying it onto the window.
         """
-
+        global is_auto_detecting, is_tracking
+        global target_x, target_y, target_width, target_height
+        global FEED_WIDTH, FEED_HEIGHT, CENTER_X, CENTER_Y
         BUFF_SIZE = 65536
         addr = (self.host, self.port)
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect(addr)
         buffer = b''
-        # Get Roboflow face model (this will fetch the model from Roboflow)
+        # get Roboflow face model
         model_name = "deteksiasapdanapi"  # FIRE
         model_version = "4"
         api_key = "NHxBSfWHlHDOQC07yyLm"
@@ -123,14 +143,16 @@ class VideoThreadPiCam(QThread):
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
 
-                    global FEED_WIDTH
-                    global FEED_HEIGHT
                     FEED_WIDTH = frame.shape[1]
                     FEED_HEIGHT = frame.shape[0]
 
+                    CENTER_X = FEED_WIDTH // 2
+                    CENTER_Y = FEED_WIDTH // 2
+
                     # OBJ DETECT ROBOFLOW
-                    global is_auto_detecting
-                    if is_auto_detecting:
+                    if is_auto_detecting and not is_tracking:
+                        self.main_window.keys = OFF_KEYS.copy()
+                        self.main_window.send_commands()
                         results = model.infer(image=frame,
                                               confidence=0.5,
                                               iou_threshold=0.5)
@@ -153,25 +175,104 @@ class VideoThreadPiCam(QThread):
                             y0 = y_center - height // 2
                             x1 = x_center + width // 2
                             y1 = y_center + height // 2
-
                             cv2.rectangle(frame, (x0, y0), (x1, y1), (255, 255, 0), 5)
+
+                            # draw circle in the center of bounding box
                             cv2.circle(frame, (x_center, y_center), radius, color, thickness)
-                            global target_x
-                            global target_y
+
                             target_x = x_center
                             target_y = y_center
-                            cv2.putText(frame, "Fire", (x0, y0 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+                            target_width = width
+                            target_height = height
 
-                    cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)
+                            cv2.putText(frame, f"ID: Fire {self.frame_counter}", (x0, y0 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+                            self.frame_counter += 1
+                            if self.frame_counter >= self.frame_threshold:
+                                # object tracking
+                                self.tracker = cv2.legacy.TrackerMOSSE_create()
+                                self.tracker.init(frame, (x0, y0, width, height))
+                                is_auto_detecting = False
+                                is_tracking = True
+                                self.frame_counter = 0
+                                # self.main_window.log(CLIENT, "Switching to object tracking...")
+                        else:
+                            self.frame_counter = 0
+
+                    # Object Tracking
+                    if is_tracking and not is_auto_detecting:
+                        # update the tracker with the new frame from ID
+                        success, bbox = self.tracker.update(frame)
+
+                        # If tracking was successful, draw the bounding box around the object
+                        if success:
+                            x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+
+                            # update target coordinates
+                            target_x = x
+                            target_y = y
+                            target_width = w
+                            target_height = h
+
+                            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)    # bounding box
+                            cv2.putText(frame, f"OT: Tracking Fire", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+                            self.update_rfes_x(x + (w // 2), y + (h // 2))
+
+                        else:
+                            # If tracking fails, display a message
+                            # cv2.putText(frame, "OT:Lost track", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                            # self.main_window.log(CLIENT, "Fire is no longer detected.")
+                            is_tracking = False
+                            is_auto_detecting = True
+
+                    # draw dot in center video feed
+                    cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)  
                     self.change_pixmap_signal.emit(frame)
 
                     # FPS CHECK
                     # stop = time.time()
                     # print(str(stop-start), "ms")
+
             except Exception as e:
-                pass
-                # print(e)
+                print(e)
         self.client_socket.close()
+
+    def update_rfes_x(self, fire_center_x, fire_center_y):
+        global CENTER_X, CENTER_Y
+        threshold = 150
+        prev_keys = self.main_window.keys.copy()
+        move_left = False
+        move_right = False
+
+        dx = fire_center_x - CENTER_X
+        dy = fire_center_y - CENTER_Y
+        # print(CENTER_X)
+        # print(CENTER_Y)
+        if abs(dx) >= threshold:
+            if dx > 0:
+                move_right = True
+            else:
+                move_left = True
+
+        if abs(dy) >= threshold:
+            if dy > 0:
+                pass
+                # move servo down
+            else:
+                pass
+                #move servo up
+
+        self.main_window.keys = OFF_KEYS.copy()
+        if move_left:    
+            self.main_window.keys[A_INDEX] = ON
+        elif move_right:
+            self.main_window.keys[D_INDEX] = ON
+        if prev_keys != self.main_window.keys:
+            self.main_window.send_commands()
+            # print(f"LEFT:{move_left}, RIGHT:{move_right}")
+            # print(f"{self.main_window.keys}")
+        # self.main_window.log(CLIENT, f"LEFT:{move_left}, RIGHT:{move_right}")
+        # self.main_window.log(CLIENT, f"{self.main_window.keys}")
 
 
 class LoggerThread(QThread):
@@ -336,6 +437,14 @@ class ScriptWindow(QWidget):
         self.execute_script_thread = threading.Thread(target=self.main_window.execute_instructions, args=(self.curr_file,),
                                                       daemon=True)  # exit as soon as main thread is done
         self.execute_script_thread.start()
+        flag_script_stop.clear()
+        self.submitButton.setText("Stop script")
+        self.submitButton.clicked.connect(self.stop_script)
+
+    def stop_script(self):
+        flag_script_stop.set()
+        self.submitButton.setText("Push to submit and run code.")
+        self.submitButton.clicked.connect(self.on_push_script)
 
     def toggle_script_window(self):
         self.main_window.toggle_write_script()
@@ -600,11 +709,12 @@ class MainWindow(QMainWindow):
         Listens for any key pressed events.
         :param event: the type of event that occurs
         """
+        global is_auto_detecting, is_tracking
 
         key = event.key()
 
-        # if key == Qt.Key_I:   # for debugging purposes
-        #     self.run_instructions()
+        if key == Qt.Key_P:   # for debugging purposes
+            self.run_instructions()
 
         if key == Qt.Key_M:
             if not self.is_tracking_mouse:
@@ -638,11 +748,22 @@ class MainWindow(QMainWindow):
             if key == Qt.Key_Right:
                 self.keys[8] = '1'
             if key == Qt.Key_I:
-                global is_auto_detecting
-                if is_auto_detecting:
-                    is_auto_detecting = False
-                else:
+                if not is_auto_detecting and not is_tracking:
                     is_auto_detecting = True
+                    is_tracking = False
+                else:
+                    is_auto_detecting = False
+                    is_tracking = False
+
+            # if key == Qt.Key_T:
+            #     # global is_tracking
+            #     if is_auto_detecting:
+            #         is_auto_detecting = False
+            #         is_tracking = True
+            #     else:
+            #         is_tracking = False
+            #         is_auto_detecting = False
+
             # incr = 1
             # global center_x
             # global center_y
@@ -748,8 +869,8 @@ class MainWindow(QMainWindow):
                     recv_thread = LoggerThread(self, SERVER, data)
                     recv_thread.update_signal.connect(self.log)
                     recv_thread.start()
-            except:
-                print("server closed")
+            except Exception as e:
+                print("server closed: " + str(e))
                 break
 
     def connect_to_server(self):
@@ -813,25 +934,30 @@ class MainWindow(QMainWindow):
             self.overlay_pixmap(qt_img, water_level, self.display_width - 330, 25)
 
             # overlay battery_level img
-            self.overlay_pixmap(qt_img, self.pi_battery_bg, self.display_width - 230, 75)
+            self.overlay_pixmap(qt_img, self.pi_battery_bg, self.display_width - 130, 70)
 
-            # overlay battery level
-            battery_level = self.create_pixmap_from_text(f"Pi Battery: {self.pi_battery}%")
-            self.overlay_pixmap(qt_img, battery_level, self.display_width - 230, 75)
-
-            # overlay cpu temp
-            self.overlay_pixmap(qt_img, self.pi_temperature_bg, self.display_width - 230, 110)
+            # overlay battery level text
+            battery_level = self.create_pixmap_from_text(f"{self.pi_battery}%", font_size=12)
+            self.overlay_pixmap(qt_img, battery_level, self.display_width - 338, 80)
 
             # overlay cpu temp
-            cpu_temp = self.create_pixmap_from_text(f"CPU Temp: {self.cpu_temp}")
-            self.overlay_pixmap(qt_img, cpu_temp, self.display_width - 230, 110)
+            self.overlay_pixmap(qt_img, self.pi_temperature_bg, self.display_width - 130, 110)
+
+            # overlay cpu temp text
+            cpu_temp = self.create_pixmap_from_text(f"{self.cpu_temp}", font_size=12)
+            self.overlay_pixmap(qt_img, cpu_temp, self.display_width - 335, 120)
+
+            # overlay Script Running text
+            if not flag_script_stop.is_set():
+                script_display = self.create_pixmap_from_text(f"Script running...", color=QColor("green"))
+                self.overlay_pixmap(qt_img, script_display, -70, 5)
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
             global target_x
             global target_y
-            print(f"x: {target_x}")
-            print(f"y: {target_y}")
+            # print(f"x: {target_x}")
+            # print(f"y: {target_y}")
         else:
             self.feed.setPixmap(QPixmap("res/not_connected.png"))
             self.update()
@@ -848,13 +974,13 @@ class MainWindow(QMainWindow):
             self.mt_counter += 1
         else:
             if self.water_level[0] == "1":
-                self.curr_wl = self.wl_down_one
+                self.curr_wl = self.wl_down_four
                 if self.water_level[1] == "1":
-                    self.curr_wl = self.wl_down_two
+                    self.curr_wl = self.wl_down_three
                     if self.water_level[2] == "1":
-                        self.curr_wl = self.wl_down_three
+                        self.curr_wl = self.wl_down_two
                         if self.water_level[3] == "1":
-                            self.curr_wl = self.wl_down_four
+                            self.curr_wl = self.wl_down_one
                             if self.water_level[4] == "1":
                                 self.curr_wl = self.wl_full
 
@@ -907,7 +1033,7 @@ class MainWindow(QMainWindow):
         Starts the run_instr thread to run instrucitons.
         """
 
-        instructions_path = "New_Script.txt"  # should be from a field
+        instructions_path = "patrol.txt"  # should be from a field
         self.run_instr_thread = threading.Thread(target=self.execute_instructions, args=(instructions_path,),
                                                  daemon=True)   # exit as soon as main thread is done
         self.run_instr_thread.start()
@@ -966,8 +1092,7 @@ class MainWindow(QMainWindow):
             else:
                 value = float(value)  # 10
                 self.send_script_instructions(command, value, delay_between_commands)
-        # self.log(CLIENT, "Execution completed.")
-        # self.log_window.log(CLIENT, "Done")
+        self.script_window.stop_script()
 
     def send_script_instructions(self, command, value, delay_between_commands):
         self.keys = OFF_KEYS.copy()

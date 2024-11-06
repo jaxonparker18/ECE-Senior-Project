@@ -10,15 +10,18 @@ if not cap.isOpened():
 
 # Read the first frame of the video
 ret, frame = cap.read()
+cv2.rectangle(frame, (10, 10), (50, 50), (255, 0, 0), 2)
 if not ret:
     print("Error: Could not read video frame")
     exit()
 
 # Let the user select the bounding box around the object to track
 bbox = cv2.selectROI("Tracking", frame, False)
-
+# bbox = ()
+print(bbox)
 # Initialize the CSRT tracker with the selected bounding box
-tracker = cv2.Tracker
+# tracker = cv2.
+tracker = cv2.legacy.TrackerMOSSE_create()
 tracker.init(frame, bbox)
 
 while True:
@@ -30,6 +33,7 @@ while True:
 
     # Update the tracker with the new frame and obtain the updated bounding box
     success, bbox = tracker.update(frame)
+    # bbox = [top left, top right, width, height]
 
     # If tracking was successful, draw the bounding box around the object
     if success:

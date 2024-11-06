@@ -15,7 +15,7 @@ from PyQt5.QtCore import *
 import ctypes
 
 import cv2
-import torch
+# import torch
 import numpy as np
 import base64
 import time
