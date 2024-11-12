@@ -21,7 +21,13 @@ bbox = cv2.selectROI("Tracking", frame, False)
 print(bbox)
 # Initialize the CSRT tracker with the selected bounding box
 # tracker = cv2.
-tracker = cv2.legacy.TrackerMOSSE_create()
+# really accurate with heavy motions: cv2.legacy.TrackerCSRT_create() (box doesnt adapt)
+# fast, not great with heavy motions: cv2.legacy.TrackerMOSSE_create() (box doesnt adapt)
+# fast, accurate with heavy motions: cv2.legacy.TrackerMedianFlow_create() (box does adapt)
+# inaccurate but has a way to remember object: cv2.legacy.TrackerTLD_create()
+
+tracker = cv2.legacy.TrackerMedianFlow_create()
+
 tracker.init(frame, bbox)
 
 while True:

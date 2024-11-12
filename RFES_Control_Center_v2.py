@@ -20,7 +20,9 @@ import base64
 import time
 import struct
 from inference.models.utils import get_roboflow_model
+import platform
 
+print(platform.version())
 # GLOBAL VARIABLES
 HOST = "10.42.0.1"
 PORT = 2100  # The port used by the server, must be >= 1024
@@ -33,7 +35,7 @@ ON = '1'
 OFF = '0'
 DC = 'x'
 
-# corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
+# corresponds to [W, A, S, D, spacebar, up, down, left, right, m_y, m_x, misc]
 W_INDEX = 0
 A_INDEX = 1
 S_INDEX = 2
@@ -43,12 +45,13 @@ UP_INDEX = 5
 DOWN_INDEX = 6
 LEFT_INDEX = 7
 RIGHT_INDEX = 8
-M_Y_INDEX = 10
-M_X_INDEX = 11
-IDLE = ['x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']
-        #  [DC, DC, DC, DC, DC, DC, DC, DC, DC, DC, DC]
-OFF_KEYS  = ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-        #   [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF]
+M_Y_INDEX = 9
+M_X_INDEX = 10
+MISC1_INDEX = 11
+MISC2_INDEX = 12
+
+IDLE      = [DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC,  DC]
+OFF_KEYS  = [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF]
 
 FEED_WIDTH = 0
 FEED_HEIGHT = 0
@@ -68,6 +71,8 @@ flag_video_stop = threading.Event()
 flag_recv_stop = threading.Event()
 flag_script_stop = threading.Event()
 flag_script_stop.set()  # so that text is not displayed on the screen
+flag_scan_stop = threading.Event()
+
 
 # SHORTCUT BINDS
 TOGGLE_OPEN_WIN = "Ctrl+O"
@@ -102,7 +107,11 @@ class VideoThreadPiCam(QThread):
         self.x = 0
         self.frame_threshold = 5   # frames it takes to lock on
         self.frame_counter = 0      # counter
+        self.track_loss_threshold = 5   # frames it takes to re-detect
         self.tracker = None
+        self.scan_thread = None
+        self.auto_scan = True
+
 
     def run(self):
         """
@@ -151,11 +160,19 @@ class VideoThreadPiCam(QThread):
 
                     # OBJ DETECT ROBOFLOW
                     if is_auto_detecting and not is_tracking:
-                        self.main_window.keys = OFF_KEYS.copy()
-                        self.main_window.send_commands()
+                        # prev_keys = OFF_KEYS.copy()
+                        # self.main_window.keys = OFF_KEYS.copy()
+                        # if prev_keys != self.main_window.keys:
+                        #     self.main_window.send_commands()
                         results = model.infer(image=frame,
                                               confidence=0.5,
                                               iou_threshold=0.5)
+                        if self.scan_thread:
+                            print(self.scan_thread.is_alive())
+                        if self.auto_scan and (not self.scan_thread or not self.scan_thread.is_alive()):
+                            self.scan_thread = threading.Thread(target=self.scan_for_target, args=())
+                            self.scan_thread.start()
+                            flag_scan_stop.clear()
 
                         # Plot image with face bounding box (using opencv)
                         if results[0].predictions:
@@ -190,11 +207,12 @@ class VideoThreadPiCam(QThread):
                             self.frame_counter += 1
                             if self.frame_counter >= self.frame_threshold:
                                 # object tracking
-                                self.tracker = cv2.legacy.TrackerMOSSE_create()
+                                self.tracker = cv2.legacy.TrackerMedianFlow_create()    # cv2.legacy.TrackerMOSSE_create()
                                 self.tracker.init(frame, (x0, y0, width, height))
                                 is_auto_detecting = False
                                 is_tracking = True
                                 self.frame_counter = 0
+                                flag_scan_stop.set()    # stop scanning
                                 # self.main_window.log(CLIENT, "Switching to object tracking...")
                         else:
                             self.frame_counter = 0
@@ -206,6 +224,7 @@ class VideoThreadPiCam(QThread):
 
                         # If tracking was successful, draw the bounding box around the object
                         if success:
+                            self.frame_counter = 0
                             x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
                             # update target coordinates
@@ -213,17 +232,28 @@ class VideoThreadPiCam(QThread):
                             target_y = y
                             target_width = w
                             target_height = h
-
+                            print(w, h)
+                            target_dist = self.calculate_target_distance(w, h)
                             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)    # bounding box
-                            cv2.putText(frame, f"OT: Tracking Fire", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
-                            self.update_rfes_x(x + (w // 2), y + (h // 2))
+                            cv2.putText(frame, f"OT: Tracking Fire (~{target_dist} in.)",
+                                        (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+                            if not self.update_rfes_x(x + (w // 2), y + (h // 2)): # update z if x is perfectly lined up
+                                self.update_rfes_z(target_dist)
 
                         else:
-                            # If tracking fails, display a message
-                            # cv2.putText(frame, "OT:Lost track", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-                            # self.main_window.log(CLIENT, "Fire is no longer detected.")
-                            is_tracking = False
-                            is_auto_detecting = True
+                            cv2.putText(frame, f"OT: Re-detecting in... {self.frame_counter}",
+                                        (FEED_WIDTH // 2 - 200, 100),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
+                            if self.frame_counter < self.track_loss_threshold:
+                                self.frame_counter += 1
+                            else:
+                                # If tracking fails, display a message
+                                # self.main_window.log(CLIENT, "Fire is no longer detected.")
+                                is_tracking = False
+                                is_auto_detecting = True
+                                self.frame_counter = 0
+                                self.main_window.keys = OFF_KEYS.copy()
+                                self.main_window.send_commands()
 
                     # draw dot in center video feed
                     cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)  
@@ -237,17 +267,38 @@ class VideoThreadPiCam(QThread):
                 print(e)
         self.client_socket.close()
 
+    def scan_for_target(self):
+        print("scan thread")
+        while not flag_scan_stop.is_set():
+            print("in whileloop")
+            # continue
+            self.main_window.keys = OFF_KEYS.copy()
+            self.main_window.keys[A_INDEX] = ON
+            self.main_window.keys[MISC2_INDEX] = 's'
+            self.main_window.send_commands()
+            time.sleep(1)
+            self.main_window.keys = OFF_KEYS.copy()
+            self.main_window.send_commands()
+            time.sleep(3)
+        self.main_window.keys[MISC2_INDEX] = DC
+
     def update_rfes_x(self, fire_center_x, fire_center_y):
+        """
+        Returns True if RFES needs adjustment, false otherwise. This method
+        also sends instructions to RFES on where to adjust.
+        :param fire_center_x:
+        :param fire_center_y:
+        :return:
+        """
+
         global CENTER_X, CENTER_Y
-        threshold = 150
+        threshold = 200
         prev_keys = self.main_window.keys.copy()
         move_left = False
         move_right = False
 
         dx = fire_center_x - CENTER_X
         dy = fire_center_y - CENTER_Y
-        # print(CENTER_X)
-        # print(CENTER_Y)
         if abs(dx) >= threshold:
             if dx > 0:
                 move_right = True
@@ -265,15 +316,64 @@ class VideoThreadPiCam(QThread):
         self.main_window.keys = OFF_KEYS.copy()
         if move_left:    
             self.main_window.keys[A_INDEX] = ON
+            self.main_window.keys[MISC2_INDEX] = 't'
+            if prev_keys != self.main_window.keys:
+                self.main_window.send_commands()
+            return True
         elif move_right:
             self.main_window.keys[D_INDEX] = ON
-        if prev_keys != self.main_window.keys:
-            self.main_window.send_commands()
+            self.main_window.keys[MISC2_INDEX] = 't'
+            if prev_keys != self.main_window.keys:
+                self.main_window.send_commands()
+            return True
+        else:
+            self.main_window.keys[MISC2_INDEX] = DC
+            if prev_keys != self.main_window.keys:
+                self.main_window.send_commands()
+            return False
             # print(f"LEFT:{move_left}, RIGHT:{move_right}")
             # print(f"{self.main_window.keys}")
         # self.main_window.log(CLIENT, f"LEFT:{move_left}, RIGHT:{move_right}")
         # self.main_window.log(CLIENT, f"{self.main_window.keys}")
 
+    def update_rfes_z(self, target_dist):
+        STOP_DIST = 20
+        prev_keys = self.main_window.keys.copy()
+        self.main_window.keys = OFF_KEYS.copy()
+        if target_dist == "40+" or int(target_dist) >= STOP_DIST:
+            self.main_window.keys = OFF_KEYS.copy()
+            self.main_window.keys[W_INDEX] = ON
+            self.main_window.keys[MISC2_INDEX] = 't'
+        else:
+            self.main_window.keys[MISC2_INDEX] = DC
+
+        if prev_keys != self.main_window.keys:
+            self.main_window.send_commands()
+            # print("moving forward!")
+
+    @staticmethod
+    def calculate_target_distance(width, height):
+        area = width * height
+        # 280 218 = 40 ft
+        # 325 254 = 35 ft
+        # 384 315 = 30 ft
+        # 460 420 = 25 ft
+        # 554 515 = 20 ft
+        # 757 692 = 15 ft
+        if area >= (757 * 692):
+            return "15"
+        elif area >= (554 * 515):
+            return "20"
+        elif area >= (460 * 520):
+            return "25"
+        elif area >= (384 * 315):
+            return "30"
+        elif area >= (325 * 254):
+            return "35"
+        elif area >= (280 * 218):
+            return "40"
+        else:
+            return "40+"
 
 class LoggerThread(QThread):
     """
@@ -700,8 +800,9 @@ class MainWindow(QMainWindow):
                 QCursor.setPos(QPoint(self.left_screen, QCursor.pos().y()))
 
             self.keys = IDLE.copy()
-            self.keys[9] = str(round(pwm_y_value, 2))
-            self.keys[10] = str(round(pwm_x_value, 2))
+            self.keys[M_Y_INDEX] = str(round(pwm_y_value, 2))
+            self.keys[M_X_INDEX] = str(round(pwm_x_value, 2))
+            self.keys[MISC1_INDEX] = 'm'
             self.send_commands()
 
     def keyPressEvent(self, event):
@@ -730,52 +831,38 @@ class MainWindow(QMainWindow):
         self.keys = IDLE.copy()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
-                self.keys[0] = '1'
+                self.keys[0] = ON
+                self.keys[MISC1_INDEX] = 'k'
             if key == Qt.Key_A:
-                self.keys[1] = '1'
+                self.keys[1] = ON
             if key == Qt.Key_S:
-                self.keys[2] = '1'
+                self.keys[2] = ON
             if key == Qt.Key_D:
-                self.keys[3] = '1'
+                self.keys[3] = ON
             if key == Qt.Key_Space:
-                self.keys[4] = '1'
+                self.keys[4] = ON
             if key == Qt.Key_Up:
-                self.keys[5] = '1'
+                self.keys[5] = ON
             if key == Qt.Key_Down:
-                self.keys[6] = '1'
+                self.keys[6] = ON
             if key == Qt.Key_Left:
-                self.keys[7] = '1'
+                self.keys[7] = ON
             if key == Qt.Key_Right:
-                self.keys[8] = '1'
+                self.keys[8] = ON
             if key == Qt.Key_I:
                 if not is_auto_detecting and not is_tracking:
+                    self.keys = OFF_KEYS.copy()
                     is_auto_detecting = True
                     is_tracking = False
+                    flag_scan_stop.clear()
                 else:
+                    self.keys = OFF_KEYS.copy()
                     is_auto_detecting = False
                     is_tracking = False
+                    flag_scan_stop.set()
 
-            # if key == Qt.Key_T:
-            #     # global is_tracking
-            #     if is_auto_detecting:
-            #         is_auto_detecting = False
-            #         is_tracking = True
-            #     else:
-            #         is_tracking = False
-            #         is_auto_detecting = False
-
-            # incr = 1
-            # global center_x
-            # global center_y
-            # if key == Qt.Key_V:
-            #     center_x += incr
-            # if key == Qt.Key_B:
-            #     center_x -= incr
-            # if key == Qt.Key_N:
-            #     center_y += incr
-            # if key == Qt.Key_Comma:
-            #     center_y -= incr
-
+            self.keys[MISC1_INDEX] = 'k'
+            self.keys[MISC2_INDEX] = OFF     # because this is not in tracking mode
             self.send_commands()
 
     def keyReleaseEvent(self, event):
@@ -791,23 +878,25 @@ class MainWindow(QMainWindow):
         self.keys = IDLE.copy()
         if not event.isAutoRepeat():
             if key == Qt.Key_W:
-                self.keys[0] = '0'
+                self.keys[W_INDEX] = OFF
             if key == Qt.Key_A:
-                self.keys[1] = '0'
+                self.keys[A_INDEX] = OFF
             if key == Qt.Key_S:
-                self.keys[2] = '0'
+                self.keys[S_INDEX] = OFF
             if key == Qt.Key_D:
-                self.keys[3] = '0'
+                self.keys[D_INDEX] = OFF
             if key == Qt.Key_Space:
-                self.keys[4] = '0'
+                self.keys[SB_INDEX] = OFF
             if key == Qt.Key_Up:
-                self.keys[5] = '0'
+                self.keys[UP_INDEX] = OFF
             if key == Qt.Key_Down:
-                self.keys[6] = '0'
+                self.keys[DOWN_INDEX] = OFF
             if key == Qt.Key_Left:
-                self.keys[7] = '0'
+                self.keys[LEFT_INDEX] = OFF
             if key == Qt.Key_Right:
-                self.keys[8] = '0'
+                self.keys[RIGHT_INDEX] = OFF
+            self.keys[MISC1_INDEX] = 'k'
+            self.keys[MISC2_INDEX] = OFF  # because this is not in tracking mode
             self.send_commands()
 
     def send_commands(self):

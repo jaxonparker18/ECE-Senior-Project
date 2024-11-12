@@ -76,7 +76,10 @@ DC = "x"
 
 FULL_SPEED = 0.75
 TURN_SPEED = 0.10
-TRACK_SPEED = 0.10
+W_TRACK_SPEED = 0.2
+TRACK_SPEED = 0.125
+
+A_SCAN_SPEED = 0.15
 
 # UART - DEPRECIATED
 # serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
@@ -132,6 +135,8 @@ left = DC
 right = DC
 m_y = DC
 m_x = DC
+misc1 = DC
+misc2 = DC
 
 # threading
 video_thread_SF = threading.Event()
@@ -239,10 +244,16 @@ def execute_commands(bits):
         global right
         global m_y
         global m_x
+        global misc1
+        global misc2
+        # FIRING MECHANISM
+        global pwm_y
+        global move_y_thread
+        global pwm_x
+        global move_x_thread
 
         bits = tuple(map(str, bits.split(",")))
         print("bits are", bits)
-        # w, a, s, d, space, up, down, left, right = bits
         if bits[0] != DC:
             w = bits[0]
         if bits[1] != DC:
@@ -261,16 +272,15 @@ def execute_commands(bits):
             left = bits[7]
         if bits[8] != DC:
             right = bits[8]
-        if bits[9] == DC:  # for mouse control
-            m_y = DC
-        if bits[10] == DC:  # for mouse controlelse:
-            pwm_y.change_duty_cycle(float(m_y))
-            m_x = DC
         if bits[9] != DC:
             m_y = bits[9]
         if bits[10] != DC:
             m_x = bits[10]
-        print("start", w, a, s, d, space, up, down, left, right, m_y, m_x)
+        if bits[11] != DC:
+            misc1 = bits[11]
+        if bits[12] != DC:
+            misc2 = bits[12]
+        print("start", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
 
         # MOVEMENT
         if w == ON and a == ON:
@@ -289,30 +299,36 @@ def execute_commands(bits):
             set_motor(-FULL_SPEED, -TURN_SPEED)
             send_to_client("S and D executed.")
         elif w == ON:
-            set_motor(FULL_SPEED, FULL_SPEED)
+            if misc2 == 't':
+                set_motor(W_TRACK_SPEED, W_TRACK_SPEED)
+            else:
+                set_motor(FULL_SPEED, FULL_SPEED)
             send_to_client("W executed.")
         elif s == ON:
             set_motor(-FULL_SPEED, -FULL_SPEED)
             send_to_client("S executed.")
         elif a == ON:
-            set_motor(-FULL_SPEED, FULL_SPEED)
+            if misc2 == 't':
+                set_motor(-TRACK_SPEED, TRACK_SPEED)
+            elif misc2 == 's':
+                set_motor(-A_SCAN_SPEED, A_SCAN_SPEED)
+            else:
+                set_motor(-FULL_SPEED, FULL_SPEED)
             send_to_client("A executed.")
         elif d == ON:
-            set_motor(FULL_SPEED, -FULL_SPEED)
+            if misc2 == 't':
+                set_motor(TRACK_SPEED, -TRACK_SPEED)
+            else:
+                set_motor(FULL_SPEED, -FULL_SPEED)
             send_to_client("D executed.")
         else:
             set_motor(0, 0)
             # send_to_client("Movement IDLE")
 
-        # FIRING MECHANISM
-        global pwm_y
-        global move_y_thread
-        global pwm_x
-        global move_x_thread
         # DC case: both up and down keys are pressed
         # KEYBOARD CONTROL
 
-        if m_y != DC:
+        if misc1 == 'm':
             pwm_y.change_duty_cycle(float(m_y))
         else:
             if up == ON and move_y_thread is None:
@@ -335,7 +351,7 @@ def execute_commands(bits):
                     move_y_thread.join()
                     move_y_thread = None
 
-        if m_x != DC:
+        if misc1 == 'm':
             pwm_x.change_duty_cycle(float(m_x))
         else:
             if left == ON and move_x_thread is None:
@@ -364,11 +380,11 @@ def execute_commands(bits):
 
         if space == ON:
             pump.on()
-            send_to_client("Spraying")
+            # send_to_client("Spraying")
 
         if space == OFF:
             pump.off()
-            send_to_client("Stop spraying...")
+            # send_to_client("Stop spraying...")
 
         # send_to_client("/NP" +  + "," + )
 
@@ -392,10 +408,14 @@ def execute_commands(bits):
         if bits[8] == OFF:
             right = DC
         if bits[9] == OFF:
-            right = DC
+            m_y = DC
         if bits[10] == OFF:
-            right = DC
-        print("end", w, a, s, d, space, up, down, left, right)
+            m_x = DC
+        if bits[11] == OFF:
+            misc1 = DC
+        if bits[12] == OFF:
+            misc2 = DC
+        print("end", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
 
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))
