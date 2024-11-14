@@ -705,6 +705,14 @@ class MainWindow(QMainWindow):
         self.top_screen = 185
         self.bot_screen = 1023
 
+        # servo track
+        self.MAX_X = 0
+        self.MIN_X = 0
+        self.MAX_Y = 0
+        self.MIN_Y = 0
+        self.curr_servo_x = 0
+        self.curr_servo_y = 0
+
         # main widget setup
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout()
@@ -954,6 +962,21 @@ class MainWindow(QMainWindow):
                     self.pi_battery = data[4:]
                 elif data.startswith("/CT"):
                     self.cpu_temp = data[3:] + chr(176) + "C"
+                elif data.startswith("/X"):
+                    pwm = float(data[2:])
+                    if (self.MAX_X - self.MIN_X) != 0:
+                        self.curr_servo_x = round(((pwm  - self.MIN_X) / (self.MAX_X - self.MIN_X)) * 100)
+                elif data.startswith("/Y"):
+                    pwm = float(data[2:])
+                    if (self.MAX_Y - self.MIN_Y) != 0:
+                        self.curr_servo_y = round(((pwm - self.MIN_Y) / (self.MAX_Y - self.MIN_Y)) * 100)
+                elif data.startswith("/MM"):
+                    data = data[3:].split(",")
+                    print(data)
+                    self.MAX_X = float(data[0])
+                    self.MIN_X = float(data[1])
+                    self.MAX_Y = float(data[2])
+                    self.MIN_Y = float(data[3])
                 else:
                     recv_thread = LoggerThread(self, SERVER, data)
                     recv_thread.update_signal.connect(self.log)
@@ -1040,6 +1063,14 @@ class MainWindow(QMainWindow):
             if not flag_script_stop.is_set():
                 script_display = self.create_pixmap_from_text(f"Script running...", color=QColor("green"))
                 self.overlay_pixmap(qt_img, script_display, -70, 5)
+
+            # overlay curr servo x
+            curr_x = self.create_pixmap_from_text(f"x: {self.curr_servo_x}", font_size=12)
+            self.overlay_pixmap(qt_img, curr_x, -70, 50)
+
+            # overlay curr servo y
+            curr_x = self.create_pixmap_from_text(f"y: {self.curr_servo_y}", font_size=12)
+            self.overlay_pixmap(qt_img, curr_x, -70, 100)
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True

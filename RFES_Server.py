@@ -1,5 +1,4 @@
 # echo-server.py
-# LAST UPDATE: Nathan - 8/27/2024 - 3:19 PM
 import sys
 
 sys.path.append('/usr/lib/python3/dist-packages')
@@ -37,7 +36,9 @@ class UpdateServoThread(threading.Thread):
         self.current_pwm_val = pwm_val
         self.pwm_max = pwm_max
         self.pwm_min = pwm_min
-        self.increment = 0.0005
+        self.increment = 0.0003
+        self.prev = round(servo._duty_cycle, 2)
+        print(self.prev)
 
     def run(self):
         """
@@ -58,9 +59,21 @@ class UpdateServoThread(threading.Thread):
                 if self.current_pwm_val >= self.pwm_min:
                     self.current_pwm_val -= self.increment
             self.servo.change_duty_cycle(self.current_pwm_val)
+            rounded = round(self.current_pwm_val, 2)
+            if self.prev != rounded:
+                self.prev = rounded
+                threading.Thread(target=self.notify_client, args=()).start()
 
     def stop(self):
         self.stop_event.set()
+
+    def notify_client(self):
+        if self.direction == UP or self.direction == DOWN:
+            # print("/y" + str(round(self.current_pwm_val, 2)))
+            send_to_client("/Y" + str(round(self.current_pwm_val, 2)))
+        else:
+            # print("/x" + str(round(self.current_pwm_val, 2)))
+            send_to_client("/X" + str(round(self.current_pwm_val, 2)))
 
 
 # CONSTS
@@ -73,6 +86,10 @@ IDLE = 4
 ON = "1"
 OFF = "0"
 DC = "x"
+
+# NETWORK
+encoder = 'utf-8'
+sending_lock = threading.Lock()
 
 FULL_SPEED = 0.75
 TURN_SPEED = 0.10
@@ -101,8 +118,8 @@ current_pwm_y = PWM_Y_MID
 pwm_y.start(current_pwm_y)
 move_y_thread = None
 
-PWM_X_MAX = 10.4
-PWM_X_MIN = 7.5
+PWM_X_MAX = 10.73
+PWM_X_MIN = 8
 PWM_X_MID = 9.3
 pwm_x = HardwarePWM(pwm_channel=1, hz=50, chip=0)
 current_pwm_x = PWM_X_MID
@@ -160,7 +177,7 @@ def recv_data():
         return
 
     msg_len = struct.unpack("!I", raw_msg_len)[0]
-    data = client_socket.recv(msg_len).decode('utf-8')
+    data = client_socket.recv(msg_len).decode(encoder)
     return data
 
 
@@ -172,8 +189,7 @@ def get_most_recent(data_bytes):
     :return: most recent bytes of data, 9 characters long
     """
 
-    string_data = data_bytes.decode('utf-8')
-    # return string_data[len(string_data) - 9: len(string_data)]
+    string_data = data_bytes.decode(encoder)
     return string_data
 
 
@@ -182,10 +198,11 @@ def send_to_client(message):
     Sends the message using the "prefixed with length" protocol.
     :param message: message to be sent
     """
-
-    msg_len = len(message)
-    client_socket.sendall(struct.pack("!I", msg_len))
-    client_socket.sendall(message.encode('utf-8'))
+    with sending_lock:
+        msg_len = len(message)
+        client_socket.sendall(struct.pack("!I", msg_len))
+        client_socket.sendall(message.encode(encoder))
+        # print(message)
 
 
 def set_motor(left_speed, right_speed):
@@ -202,7 +219,6 @@ def set_motor(left_speed, right_speed):
         left_motor.stop()
     elif left_speed > 0:
         left_motor.forward(left_speed)
-        print("forward")
     else:
         left_motor.backward(abs(left_speed))
 
@@ -330,6 +346,7 @@ def execute_commands(bits):
 
         if misc1 == 'm':
             pwm_y.change_duty_cycle(float(m_y))
+            send_to_client("/Y" + str(round(float(m_y), 2)))
         else:
             if up == ON and move_y_thread is None:
                 move_y_thread = UpdateServoThread(pwm_y, pwm_y._duty_cycle, PWM_Y_MAX, PWM_Y_MIN, UP)
@@ -353,6 +370,7 @@ def execute_commands(bits):
 
         if misc1 == 'm':
             pwm_x.change_duty_cycle(float(m_x))
+            send_to_client("/X" + str(round(float(m_x), 2)))
         else:
             if left == ON and move_x_thread is None:
                 move_x_thread = UpdateServoThread(pwm_x, pwm_x._duty_cycle, PWM_X_MAX, PWM_X_MIN, LEFT)
@@ -373,10 +391,6 @@ def execute_commands(bits):
                     move_x_thread.stop()
                     move_x_thread.join()
                     move_x_thread = None
-
-        # MOUSE CONTROL
-        # if left != DC:
-        #    pwm_y.change_duty_cycle(float(left))
 
         if space == ON:
             pump.on()
@@ -451,6 +465,12 @@ def update_cpu_temp():
         time.sleep(5)
 
 
+def update_servo_max_min():
+    global PWM_X_MAX, PWM_X_MIN, PWM_Y_MAX, PWM_Y_MIN
+    send_to_client("/MM" + str(PWM_X_MAX) + "," + str(PWM_X_MIN) +
+                   "," + str(PWM_Y_MAX) + "," + str(PWM_Y_MIN))
+
+
 def handle_commands():
     """
     Establishes handshake with TCP Client and listens to any commands sent from the client.
@@ -477,6 +497,9 @@ def handle_commands():
             cpu_temp_thread = threading.Thread(target=update_cpu_temp, args=())
             cpu_temp_thread_SF.clear()
             cpu_temp_thread.start()
+
+            update_servo_max_min()
+
             while True:
                 try:
                     # data = client_socket.recv(1024) # , MSG_WAITALL
