@@ -23,7 +23,6 @@ import struct
 from inference.models.utils import get_roboflow_model
 import platform
 
-print(platform.version())
 # GLOBAL VARIABLES
 HOST = "10.42.0.1"
 PORT = 2100  # The port used by the server, must be >= 1024
@@ -146,14 +145,12 @@ class VideoThreadPiCam(QThread):
             try:
                 packet = self.client_socket.recv(BUFF_SIZE)
                 buffer += packet
-
                 while b'\0' in buffer:
                     # start = time.time()
                     message, buffer = buffer.split(b'\0', 1)
                     data = base64.b64decode(message)
                     frame = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-
                     FEED_WIDTH = frame.shape[1]
                     FEED_HEIGHT = frame.shape[0]
 
@@ -165,8 +162,6 @@ class VideoThreadPiCam(QThread):
                         results = model.infer(image=frame,
                                               confidence=0.5,
                                               iou_threshold=0.5)
-                        if self.scan_thread:
-                            print(self.scan_thread.is_alive())
                         if self.auto_scan and (not self.scan_thread or not self.scan_thread.is_alive()):
                             self.scan_thread = threading.Thread(target=self.scan_for_target, args=())
                             self.scan_thread.start()
@@ -230,12 +225,11 @@ class VideoThreadPiCam(QThread):
                             target_y = y
                             target_width = w
                             target_height = h
-                            print(w, h)
                             target_dist = self.calculate_target_distance(w, h)
                             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)    # bounding box
                             cv2.putText(frame, f"OT: Tracking Fire (~{target_dist} in.)",
                                         (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
-                            if not self.update_rfes_x(x + (w // 2), y + (h // 2)): # update z if x is perfectly lined up
+                            if not self.update_rfes_x(x + (w // 2), y + (h // 2)):  # update z if x is perfectly lined up
                                 self.update_rfes_z(target_dist)
 
                         else:
@@ -254,7 +248,8 @@ class VideoThreadPiCam(QThread):
                                 self.main_window.send_commands()
 
                     # draw dot in center video feed
-                    cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)  
+                    # cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)
+
                     self.change_pixmap_signal.emit(frame)
 
                     # circle motion
@@ -274,7 +269,7 @@ class VideoThreadPiCam(QThread):
             self.main_window.keys[A_INDEX] = ON
             self.main_window.keys[MISC2_INDEX] = 's'
             self.main_window.send_commands()
-            time.sleep(0.8)
+            time.sleep(0.4)
             self.main_window.keys = OFF_KEYS.copy()
             self.main_window.send_commands()
             time.sleep(2)
@@ -568,8 +563,7 @@ class ScriptWindow(QWidget):
 
     def on_push_script(self):
         self.main_window.log(CLIENT, f"Executing script: {os.path.splitext(os.path.basename(self.curr_file))[0]}")
-        self.execute_script_thread = threading.Thread(target=self.main_window.execute_instructions, args=(self.curr_file,),
-                                                      daemon=True)  # exit as soon as main thread is done
+        self.execute_script_thread = threading.Thread(target=self.main_window.execute_instructions, args=(self.curr_file,))  # exit as soon as main thread is done
         self.execute_script_thread.start()
         flag_script_stop.clear()
         self.submitButton.setText("Stop script")
@@ -1002,7 +996,6 @@ class MainWindow(QMainWindow):
                         self.curr_servo_y = round(((pwm - self.MIN_Y) / (self.MAX_Y - self.MIN_Y)) * 100)
                 elif data.startswith("/MM"):
                     data = data[3:].split(",")
-                    print(data)
                     self.MAX_X = float(data[0])
                     self.MIN_X = float(data[1])
                     self.MAX_Y = float(data[2])
@@ -1227,7 +1220,6 @@ class MainWindow(QMainWindow):
                 in_loop_block = False
             if execute_loop:
                 i = 0
-                print(instructions_to_loop)
                 while i < loop and not flag_script_stop.is_set():
                     for ins in instructions_to_loop:
 
@@ -1248,7 +1240,6 @@ class MainWindow(QMainWindow):
         self.keys = OFF_KEYS.copy()
         self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
         self.send_commands()
-        # print(f"keys sent: {self.keys}")
         time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
         self.keys = OFF_KEYS.copy()
         self.send_commands()

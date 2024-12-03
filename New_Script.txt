@@ -1,1 +1,3 @@
-forward(1000)
+forward(1)
+left(90)
+right(90)
