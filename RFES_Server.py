@@ -12,6 +12,7 @@ import numpy as np
 import imutils
 import io
 import struct
+import math
 
 # PI EXCLUSIVE
 import serial
@@ -93,7 +94,7 @@ sending_lock = threading.Lock()
 
 FULL_SPEED = 0.75
 TURN_SPEED = 0.10
-W_TRACK_SPEED = 0.2
+W_TRACK_SPEED = 0.4
 TRACK_SPEED = 0.125
 
 A_SCAN_SPEED = 0.15
@@ -104,27 +105,29 @@ A_SCAN_SPEED = 0.15
 # ser = serial.Serial(serial_port, baud_rate)
 
 # GPIO MOTOR
-left_motor = Motor("BOARD11", "BOARD13")
-right_motor = Motor("BOARD18", "BOARD16")
+left_motor = Motor("BOARD12", "BOARD13")  # 11 13
+right_motor = Motor("BOARD18", "BOARD16")  # 18 16
 
 # SERVOS
 ## MAX PWM IS 2.4MS or 12% DUTY CYCLE
 ## MIN PWM IS 0.8MS or  4% DUTY CYCLE
 PWM_Y_MAX = 10
-PWM_Y_MIN = 5
+PWM_Y_MIN = 6.37
 PWM_Y_MID = 7.5
 pwm_y = HardwarePWM(pwm_channel=0, hz=50, chip=0)
 current_pwm_y = PWM_Y_MID
 pwm_y.start(current_pwm_y)
 move_y_thread = None
 
-PWM_X_MAX = 10.73
-PWM_X_MIN = 8
-PWM_X_MID = 9.3
+PWM_X_MAX = 10.9
+PWM_X_MIN = 8.1
+PWM_X_MID = 10
 pwm_x = HardwarePWM(pwm_channel=1, hz=50, chip=0)
 current_pwm_x = PWM_X_MID
 pwm_x.start(current_pwm_x)
 move_x_thread = None
+
+t = 0
 
 # PUMP
 pump = LED("BOARD15")
@@ -269,7 +272,7 @@ def execute_commands(bits):
         global move_x_thread
 
         bits = tuple(map(str, bits.split(",")))
-        print("bits are", bits)
+        # print("bits are", bits)
         if bits[0] != DC:
             w = bits[0]
         if bits[1] != DC:
@@ -296,7 +299,7 @@ def execute_commands(bits):
             misc1 = bits[11]
         if bits[12] != DC:
             misc2 = bits[12]
-        print("start", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
+        # print("start", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
 
         # MOVEMENT
         if w == ON and a == ON:
@@ -429,10 +432,40 @@ def execute_commands(bits):
             misc1 = DC
         if bits[12] == OFF:
             misc2 = DC
-        print("end", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
+        # print("end", w, a, s, d, space, up, down, left, right, m_y, m_x, misc1, misc2)
 
     except Exception as e:
         send_to_client("ERROR OCCURED: " + repr(e))
+
+
+def circle_motion():
+    global pwm_x, pwm_y
+    global t
+    radius = 1
+    speed = 0.01
+    multiplier = 0.7
+    while True:
+        # Calculate x(t) and y(t) for circular motion
+        x = radius * math.cos(t)
+        y = radius * math.sin(t)
+
+        # Map the x and y values to PWM duty cycles
+        # Assuming the range of motion is between min_pwm and max_pwm
+        px = PWM_X_MIN + ((x * multiplier / radius) + 1) * (PWM_X_MAX - PWM_X_MIN) / 2  # Map x to PWM range
+        py = PWM_Y_MIN + ((y * multiplier / radius) + 1) * (PWM_Y_MAX - PWM_Y_MIN) / 2  # Map y to PWM range
+
+        # print(px)
+        # print(py)
+        pwm_x.change_duty_cycle(px)
+        pwm_y.change_duty_cycle(py)
+
+        # Move to the next step (increase t to simulate motion)
+        t += 0.1 * speed  # Adjust speed by changing this value
+
+        # Loop back to 0 when t completes a full circle (2*pi radians)
+        if t >= 2 * math.pi:
+            t = 0
+        # time.sleep(0.1)
 
 
 def update_pi_battery(pi_battery):
@@ -500,12 +533,13 @@ def handle_commands():
 
             update_servo_max_min()
 
+            # threading.Thread(target=circle_motion).start()
+
             while True:
                 try:
                     # data = client_socket.recv(1024) # , MSG_WAITALL
                     data = recv_data()
                     if data:
-                        # print(data)
                         print("data is " + data)
                         execute_commands(data)
                     if not data:
