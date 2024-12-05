@@ -97,7 +97,7 @@ TURN_SPEED = 0.10
 W_TRACK_SPEED = 0.4
 TRACK_SPEED = 0.125
 
-A_SCAN_SPEED = 0.15
+A_SCAN_SPEED = 0.3
 
 # UART - DEPRECIATED
 # serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'
@@ -328,7 +328,7 @@ def execute_commands(bits):
             send_to_client("S executed.")
         elif a == ON:
             if misc2 == 't':
-                set_motor(-TRACK_SPEED, TRACK_SPEED)
+                set_motor(-float(misc1), float(misc1))
             elif misc2 == 's':
                 set_motor(-A_SCAN_SPEED, A_SCAN_SPEED)
             else:
@@ -336,7 +336,7 @@ def execute_commands(bits):
             send_to_client("A executed.")
         elif d == ON:
             if misc2 == 't':
-                set_motor(TRACK_SPEED, -TRACK_SPEED)
+                set_motor(float(misc1), -float(misc1))
             else:
                 set_motor(FULL_SPEED, -FULL_SPEED)
             send_to_client("D executed.")

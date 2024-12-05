@@ -117,8 +117,11 @@ class VideoThreadPiCam(QThread):
         self.delay_scan = 0
         self.delay_scan_th = 5
 
+        # PI controller
+        self.integral = 0
 
-        self.t = 0 # for circular motion
+        # circular motion
+        self.t = 0
 
     def run(self):
         """
@@ -209,12 +212,13 @@ class VideoThreadPiCam(QThread):
                             self.frame_counter += 1
                             if self.frame_counter >= self.frame_threshold:
                                 # object tracking
-                                self.tracker = cv2.legacy.TrackerMedianFlow_create()    # cv2.legacy.TrackerMOSSE_create()
+                                self.tracker = cv2.legacy.TrackerMedianFlow_create()  # cv2.legacy.TrackerMOSSE_create()
                                 self.tracker.init(frame, (x0, y0, width, height))
                                 is_auto_detecting = False
                                 is_tracking = True
                                 self.frame_counter = 0
                                 flag_scan_stop.set()    # stop scanning
+                                self.integral = 0
                                 # self.main_window.log(CLIENT, "Switching to object tracking...")
                         else:
                             self.frame_counter = 0
@@ -301,20 +305,38 @@ class VideoThreadPiCam(QThread):
         """
 
         global CENTER_X, CENTER_Y
-        threshold = 200
+        threshold = 75
         prev_keys = self.main_window.keys.copy()
         move_left = False
         move_right = False
 
-        dx = fire_center_x - CENTER_X
-        if abs(dx) >= threshold:
-            if dx > 0:
+        Kp = 0.000156
+        Ki = 0.000005
+
+        # PI controller
+        err = fire_center_x - CENTER_X
+
+        self.integral += err
+
+        if -threshold < err < threshold:
+            output = 0
+            self.integral = 16000   #14000
+        else:
+            output = (Kp * abs(err)) + (Ki * abs(self.integral))
+
+        print(f"err: {err}")
+        print(f"output: {output}")
+
+        if abs(err) >= threshold:
+            if err > 0:
                 move_right = True
             else:
                 move_left = True
+
         if move_left:
             self.main_window.keys = OFF_KEYS.copy()
             self.main_window.keys[A_INDEX] = ON
+            self.main_window.keys[MISC1_INDEX] = str(round(output, 2))
             self.main_window.keys[MISC2_INDEX] = 't'
             if prev_keys != self.main_window.keys:
                 self.main_window.send_commands()
@@ -323,6 +345,7 @@ class VideoThreadPiCam(QThread):
         elif move_right:
             self.main_window.keys = OFF_KEYS.copy()
             self.main_window.keys[D_INDEX] = ON
+            self.main_window.keys[MISC1_INDEX] = str(round(output, 2))
             self.main_window.keys[MISC2_INDEX] = 't'
             if prev_keys != self.main_window.keys:
                 self.main_window.send_commands()
@@ -414,32 +437,7 @@ class VideoThreadPiCam(QThread):
         # print(width, height)
         # print(area)
 
-        """
-        # 280 218 = 40 ft
-        # 325 254 = 35 ft
-        # 384 315 = 30 ft
-        # 460 420 = 25 ft
-        # 554 515 = 20 ft
-        # 757 692 = 15 ft
-        if area >= (757 * 692):
-            return "15"
-        elif area >= (554 * 515):
-            return "20"
-        elif area >= (460 * 520):
-            return "25"
-        elif area >= (384 * 315):
-            return "30"
-        elif area >= (325 * 254):
-            return "35"
-        elif area >= (280 * 218):
-            return "40"
-        else:
-            return "40+"
-        """
-        # if area >= 400000:
-        #     return "STOP"
         return str(round((-0.00006731601078 * area) + 39.04529765))
-
 
 class LoggerThread(QThread):
     """
@@ -1140,9 +1138,10 @@ class MainWindow(QMainWindow):
                 script_display = self.create_pixmap_from_text(f"Script running...", color=QColor("green"))
                 self.overlay_pixmap(qt_img, script_display, -70, 10)
 
+            # overlay Auto Scan text
             if auto_scan and (is_auto_detecting or is_tracking):
                 auto_scan_text = self.create_pixmap_from_text(f"Auto-scanning...", color=QColor("red"), font_size=30)
-                self.overlay_pixmap(qt_img, auto_scan_text, 100, 10)
+                self.overlay_pixmap(qt_img, auto_scan_text, 850, 50)
 
             # overlay curr servo x
             curr_x = self.create_pixmap_from_text(f"x: {self.curr_servo_x}", font_size=12)
