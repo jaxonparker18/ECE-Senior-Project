@@ -86,7 +86,7 @@ def instruction_as_tuple(instruction):
 
 # this needs to match with RFES_Control_Center: [W, A, S, D, spacebar, up, down, left, right, m_y, m_x]
 COMMANDS_STRING = {'forward': 0, 'left': 1, 'backward': 2, 'right': 3, 'spray': 4, 'aim_up': 5, 'aim_down': 6,
-                   'aim_left': 7, 'aim_right': 8}
+                   'aim_left': 7, 'aim_right': 8, 'aim_x': 9, 'aim_y': 10}
 
 SYNTAX_STRING = {'for': 0, 'end': 1}
 

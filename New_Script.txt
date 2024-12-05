@@ -1,3 +1,10 @@
+for(-1)
+aim_x(0)
 forward(1)
-left(90)
-right(90)
+aim_x(100)
+forward(1)
+aim_y(0)
+forward(1)
+aim_y(100)
+forward(1)
+end

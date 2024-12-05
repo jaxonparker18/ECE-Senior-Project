@@ -525,17 +525,15 @@ class ScriptWindow(QWidget):
             "left(d)\n"
             "right(d)\n"
             "WHERE d IS THE DEGREES \n"
-            "aim_up(s)\n"
-            "aim_down(s)\n"
-            "aim_left(s)\n"
-            "aim_right(s)\n"
-            "AND s IS THE DEGREE OF THE TURN \n"
+            "aim_x(p)\n"
+            "aim_y(p)\n"
+            "AND p IS THE PERCENTAGE OF THE TURN \n"
             "\n"
             "EXAMPLE:\n"
             "forward(10) // where 10 is the distance in feet \n"
             "\n"
             "FOR AIMING COMMANDS: \n"
-            "aim_up(90) // where 90 is the angle to turn \n"
+            "aim_x(50) // where 50 is the center of the servo. \n"
             "\n"
             "FOR LOOPS: \n"
             "for(n) // where n is the number of loops and end that closes the \n"
@@ -743,9 +741,17 @@ class MainWindow(QMainWindow):
         self.curr_wl = self.wl_empty_text
         self.mt_counter = 0
 
-        self.main_battery_bg = QPixmap("res/main_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.pi_battery_bg = QPixmap("res/pi_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.pi_temperature_bg = QPixmap("res/pi_temperature_status.png").scaled(100, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.main_battery_bg = QPixmap("res/main_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio,
+                                                                             Qt.SmoothTransformation)
+        self.pi_battery_bg = QPixmap("res/pi_battery_status.png").scaled(100, 300, Qt.KeepAspectRatio,
+                                                                         Qt.SmoothTransformation)
+        self.pi_temperature_bg = QPixmap("res/pi_temperature_status.png").scaled(100, 300, Qt.KeepAspectRatio,
+                                                                                 Qt.SmoothTransformation)
+        self.pwm_h_bar = QPixmap("res/pwm_h_bar.png").scaled(700, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.pwm_v_bar = self.pwm_h_bar.transformed(QTransform().rotate(90))
+
+        self.pwm_block = QPixmap("res/block_indicator.png").scaled(30, 30, Qt.KeepAspectRatio,
+                                                                     Qt.SmoothTransformation)
 
         self.feed_thread = None
         self.coms_thread = None
@@ -1144,12 +1150,12 @@ class MainWindow(QMainWindow):
                 self.overlay_pixmap(qt_img, auto_scan_text, 850, 50)
 
             # overlay curr servo x
-            curr_x = self.create_pixmap_from_text(f"x: {self.curr_servo_x}", font_size=12)
-            self.overlay_pixmap(qt_img, curr_x, -70, 50)
+            self.overlay_pixmap(qt_img, self.pwm_h_bar, 1140, self.display_height - 365)
+            self.overlay_pixmap(qt_img, self.pwm_block, int(((1 - self.curr_servo_x/100) * (1796 - 1150)) + 1150), 885)  # x: 1150 - 1796
 
             # overlay curr servo y
-            curr_x = self.create_pixmap_from_text(f"y: {self.curr_servo_y}", font_size=12)
-            self.overlay_pixmap(qt_img, curr_x, -70, 100)
+            self.overlay_pixmap(qt_img, self.pwm_v_bar, 1659, 160)
+            self.overlay_pixmap(qt_img, self.pwm_block, 1849, int(((1 - self.curr_servo_y / 100) * (818 - 168)) + 168))  # y: 168 - 818
 
             self.feed.setPixmap(qt_img)
             self.feed_thread.grab_frame = True
@@ -1293,13 +1299,25 @@ class MainWindow(QMainWindow):
         self.script_window.stop_script()
 
     def send_script_instructions(self, command, value, delay_between_commands):
-        self.keys = OFF_KEYS.copy()
-        self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
-        self.send_commands()
-        time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
-        self.keys = OFF_KEYS.copy()
-        self.send_commands()
-        time.sleep(delay_between_commands)
+        if command in ["aim_x", "aim_y"]:
+            self.keys = OFF_KEYS.copy()
+            self.keys[MISC1_INDEX] = 'm'
+            if command == "aim_x":
+                pwm_val = ((1 - (value / 100)) * (self.MAX_X - self.MIN_X)) + self.MIN_X
+                self.keys[M_X_INDEX] = str(round(pwm_val, 2))
+
+            elif command == "aim_y":
+                pwm_val = ((value / 100) * (self.MAX_Y - self.MIN_Y)) + self.MIN_Y
+                self.keys[M_Y_INDEX] = str(round(pwm_val, 2))
+            self.send_commands()
+        else:
+            self.keys = OFF_KEYS.copy()
+            self.keys[Instructions_Reader.COMMANDS_STRING[command]] = ON
+            self.send_commands()
+            time.sleep(self.convert_speed_to_time(command, value))  # execute command for a certain duration
+            self.keys = OFF_KEYS.copy()
+            self.send_commands()
+            time.sleep(delay_between_commands)
 
     @staticmethod
     def convert_speed_to_time(command, value):
@@ -1333,10 +1351,10 @@ class MainWindow(QMainWindow):
                 time_for_90 = RIGHT_90
             t_per_deg = time_for_90 / degrees_tested
             return value * t_per_deg
-        elif command in ["aim_left", "aim_right", "aim_up", "aim_down"]:
+        elif command in ["aim_x", "aim_y"]:
             # if it's aiming, turn value to degrees
             # convert value to angle, so use value to see how long it takes to turn a certain angle
-            return value    # not implemented yet
+            return value    # handled by send_script_instructions method
         else: # spray
             return value
 
@@ -1384,13 +1402,6 @@ class MainWindow(QMainWindow):
         try:
             self.script_window.on_open_script()
             self.on_write_script()
-            # filename = QFileDialog.getOpenFileName(self, "Open File", "", "Text Files (*.txt)")
-            # content = open(filename[0]).read()
-            # self.script_window.show()
-            # self.script_window.textBox.clear()
-            # self.script_window.textBox.setText(content)
-            # self.script_window.curr_file = filename
-            # self.script_window.setWindowTitle(f"Script Editor - {os.path.splitext(os.path.basename(filename[0]))[0]}")
 
         except Exception as e:
             self.log(CLIENT, "Please select a valid file.")
