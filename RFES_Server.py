@@ -517,17 +517,17 @@ def handle_commands():
             send_to_client("Connection established.")
             # start pi_battery thread
             pi_battery = PiBatteryIndicator.INA219(addr=0x41)
-            pi_battery_thread = threading.Thread(target=update_pi_battery, args=(pi_battery,))
+            pi_battery_thread = threading.Thread(target=update_pi_battery, args=(pi_battery,), daemon=True)
             pi_battery_thread_SF.clear()
             pi_battery_thread.start()
 
             # start water_level thread
-            water_level_thread = threading.Thread(target=update_water_level, args=())
+            water_level_thread = threading.Thread(target=update_water_level, args=(), daemon=True)
             water_level_thread_SF.clear()
             water_level_thread.start()
 
             # start cpu_temp thread
-            cpu_temp_thread = threading.Thread(target=update_cpu_temp, args=())
+            cpu_temp_thread = threading.Thread(target=update_cpu_temp, args=(), daemon=True)
             cpu_temp_thread_SF.clear()
             cpu_temp_thread.start()
 
