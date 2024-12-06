@@ -705,7 +705,7 @@ class MainWindow(QMainWindow):
         self.screen = QDesktopWidget().screenGeometry()
         # self.setGeometry(0, 0, self.screen.width(), self.screen.height())
         self.showMaximized()
-        self.setWindowIcon(QIcon('res/rfes_icon.png'))
+        self.setWindowIcon(QIcon('res/rfes_icon.ico'))
 
         self.display_width = 1920
         self.display_height = 1080
@@ -1528,10 +1528,11 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    my_app_id = 'rfes-control-center'  # arbitrary string
+    my_app_id = 'rfes-control-center-app'  # arbitrary string
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("res/rfes_icon.ico"))
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec_())
