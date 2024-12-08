@@ -97,7 +97,7 @@ TURN_SPEED = 0.10
 W_TRACK_SPEED = 0.4
 TRACK_SPEED = 0.125
 
-A_SCAN_SPEED = 0.3
+A_SCAN_SPEED = 0.4
 
 # UART - DEPRECIATED
 # serial_port = '/dev/ttyAMA10'  # debug port -> '/dev/ttyAMA10', USB -> '/dev/USB0' | busted -> '/dev/ttyAMA0'

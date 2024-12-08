@@ -311,7 +311,7 @@ class VideoThreadPiCam(QThread):
         move_right = False
 
         Kp = 0.000156
-        Ki = 0.00001 # 0.000005
+        Ki = 0.000005 # 0.000005
 
         # PI controller
         err = fire_center_x - CENTER_X
@@ -320,7 +320,7 @@ class VideoThreadPiCam(QThread):
 
         if -threshold < err < threshold:
             output = 0
-            self.integral = 11000   #22000
+            self.integral = 28000   #22000
         else:
             output = (Kp * abs(err)) + (Ki * abs(self.integral))
 
