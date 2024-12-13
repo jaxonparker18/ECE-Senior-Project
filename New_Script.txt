@@ -1,3 +1,5 @@
-forward(5)
+for(-1)
+forward(1)
 left(90)
-forward(5)
+spray(1)
+end

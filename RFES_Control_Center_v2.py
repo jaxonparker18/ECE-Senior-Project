@@ -82,6 +82,7 @@ TOGGLE_LOG_WIN = "Ctrl+L"
 TOGGLE_SCRIPT_WIN = "Ctrl+,"
 SAVE = "Ctrl+S"
 
+
 class VideoThreadPiCam(QThread):
     """
     Thread class to run the camera on a different thread.
@@ -116,7 +117,7 @@ class VideoThreadPiCam(QThread):
         self.is_shooting = False
         self.delay_scan = 0
         self.delay_scan_th = 5
-
+        # "NHxBSfWHlHDOQC07yyLm"
         # PI controller
         self.integral = 0
 
@@ -139,7 +140,7 @@ class VideoThreadPiCam(QThread):
         # get Roboflow face model
         model_name = "deteksiasapdanapi"  # FIRE
         model_version = "4"
-        api_key = "NHxBSfWHlHDOQC07yyLm"
+        api_key = "API KEY"
         model = get_roboflow_model(
             model_id="{}/{}".format(model_name, model_version),
             # Replace ROBOFLOW_API_KEY with your Roboflow API Key
@@ -182,10 +183,6 @@ class VideoThreadPiCam(QThread):
                         # Plot image with face bounding box (using opencv)
                         elif results[0].predictions:
                             prediction = results[0].predictions[0]
-                            # class_name = prediction.class_name
-                            # confidence = prediction.confidence
-                            # print(prediction)
-                            # print(class_name)
 
                             x_center = int(prediction.x)
                             y_center = int(prediction.y)
@@ -264,13 +261,7 @@ class VideoThreadPiCam(QThread):
                                 self.main_window.keys = OFF_KEYS.copy()
                                 self.main_window.send_commands()
 
-                    # draw dot in center video feed
-                    # cv2.circle(frame, (frame.shape[1] // 2, frame.shape[0] // 2), radius, (0, 105, 255), thickness)
-
                     self.change_pixmap_signal.emit(frame)
-
-                    # circle motion
-                    # threading.Thread(target=self.circle_motion).start()
 
                     # FPS CHECK
                     # stop = time.time()
@@ -323,9 +314,6 @@ class VideoThreadPiCam(QThread):
             self.integral = 28000   #22000
         else:
             output = (Kp * abs(err)) + (Ki * abs(self.integral))
-
-        print(f"err: {err}")
-        print(f"output: {output}")
 
         if abs(err) >= threshold:
             if err > 0:
@@ -395,41 +383,6 @@ class VideoThreadPiCam(QThread):
 
         if prev_keys != self.main_window.keys:
             self.main_window.send_commands()
-
-    def circle_motion(self):
-        radius = 1
-        speed = 5
-        multiplier = 0.5
-
-        # Calculate x(t) and y(t) for circular motion
-        x = radius * math.cos(self.t)
-        y = radius * math.sin(self.t)
-
-        # Map the x and y values to PWM duty cycles
-        # Assuming the range of motion is between min_pwm and max_pwm
-        pwm_x = self.main_window.MIN_X + ((x * multiplier / radius) + 1) * (self.main_window.MAX_X - self.main_window.MIN_X) / 2 # Map x to PWM range
-        pwm_y = self.main_window.MIN_Y + ((y * multiplier / radius) + 1) * (self.main_window.MAX_Y - self.main_window.MIN_Y) / 2 # Map y to PWM range
-
-        # Print the PWM values (in a real implementation, you would send these to your servos)
-        # print(f"Servo 1 (x): {pwm_x:.2f}, Servo 2 (y): {pwm_y:.2f}")
-        # print(self.main_window.MIN_X)
-        # print(self.main_window.MIN_Y)
-        # print(self.main_window.MAX_X)
-        # print(self.main_window.MAX_Y)
-
-        self.main_window.keys = IDLE.copy()
-        self.main_window.keys[M_Y_INDEX] = str(round(pwm_y, 2))
-        self.main_window.keys[M_X_INDEX] = str(round(pwm_x, 2))
-        self.main_window.keys[MISC1_INDEX] = 'm'
-        self.main_window.send_commands()
-
-        # Move to the next step (increase t to simulate motion)
-        self.t += 0.1 * speed  # Adjust speed by changing this value
-
-        # Loop back to 0 when t completes a full circle (2*pi radians)
-        if self.t >= 2 * math.pi:
-            self.t = 0
-        # time.sleep(0.01)
 
     @staticmethod
     def calculate_target_distance(width, height):
@@ -1072,7 +1025,6 @@ class MainWindow(QMainWindow):
 
         self.connect_button.clearFocus()
         if self.status == "DISCONNECTED":
-            print("connecting")
             self.log(CLIENT, "Connecting to server...")
             self.socket = socket(AF_INET, SOCK_STREAM)
             try:
